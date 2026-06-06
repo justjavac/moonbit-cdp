@@ -33,6 +33,15 @@ jobs:
         with:
           node-version: 24
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Use MSVC C compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "CC=cl" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Set up MoonBit
         if: runner.os != 'Windows'
         run: |

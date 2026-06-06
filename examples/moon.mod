@@ -18,3 +18,7 @@ keywords = [ "cdp", "chrome-devtools-protocol", "examples" ]
 description = "Examples for justjavac/cdp"
 
 preferred_target = "native"
+
+options(
+  source: "cmd",
+)

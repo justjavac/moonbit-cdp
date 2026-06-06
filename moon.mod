@@ -1,17 +1,25 @@
 name = "justjavac/cdp"
 
-version = "0.1.0"
+version = "0.1.1"
+
+readme = "README.md"
 
 import {
   "moonbitlang/async@0.19.1",
   "moonbitlang/x@0.4.45",
 }
 
-repository = ""
+repository = "https://github.com/justjavac/moonbit-cdp"
 
 license = "MIT"
 
-keywords = [ ]
+keywords = [
+  "cdp",
+  "chrome-devtools-protocol",
+  "chrome",
+  "devtools",
+  "browser-automation",
+]
 
 description = "MoonBit Chrome DevTools Protocol library"
 

@@ -1,4 +1,10 @@
 ///|
+/// Errors raised by schema-aware CDP command, response, and event validation.
+///
+/// The first string in each command/event/result variant is the full CDP method
+/// name, such as `Runtime.evaluate`. Field variants use the second string for
+/// the parameter or return field name. Type mismatch variants include the
+/// expected compact protocol kind used by the bundled manifest.
 pub(all) suberror ProtocolSchemaError {
   UnknownCommand(String)
   UnsupportedRemoteCommand(String)
@@ -14,6 +20,11 @@ pub(all) suberror ProtocolSchemaError {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Stable diagnostic data for a `ProtocolSchemaError`.
+///
+/// This struct is useful for CLI output, logs, and tests that should not match
+/// against formatted human text. `path` points at the command, event, params
+/// field, or result field that failed validation.
 pub(all) struct ProtocolSchemaErrorDiagnostic {
   kind : String
   method_name : String?
@@ -23,6 +34,13 @@ pub(all) struct ProtocolSchemaErrorDiagnostic {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Convert a schema error into structured diagnostic data.
+///
+/// # Example
+/// ```mbt nocheck
+/// let diagnostic = ProtocolSchemaError::UnknownCommand("Nope.run").diagnostic()
+/// assert_eq(diagnostic.kind, "unknown_command")
+/// ```
 pub fn ProtocolSchemaError::diagnostic(
   self : ProtocolSchemaError,
 ) -> ProtocolSchemaErrorDiagnostic {
@@ -36,6 +54,7 @@ pub fn ProtocolSchemaError::diagnostic(
 }
 
 ///|
+/// Return the stable machine-readable error kind.
 pub fn ProtocolSchemaError::kind(self : ProtocolSchemaError) -> String {
   match self {
     UnknownCommand(_) => "unknown_command"
@@ -53,6 +72,7 @@ pub fn ProtocolSchemaError::kind(self : ProtocolSchemaError) -> String {
 }
 
 ///|
+/// Return the CDP method name associated with this schema error.
 pub fn ProtocolSchemaError::method_name(self : ProtocolSchemaError) -> String? {
   match self {
     UnknownCommand(method_name)
@@ -70,6 +90,7 @@ pub fn ProtocolSchemaError::method_name(self : ProtocolSchemaError) -> String? {
 }
 
 ///|
+/// Return the parameter or return field name associated with this error.
 pub fn ProtocolSchemaError::field_name(self : ProtocolSchemaError) -> String? {
   match self {
     MissingParameter(_, field_name)
@@ -87,6 +108,7 @@ pub fn ProtocolSchemaError::field_name(self : ProtocolSchemaError) -> String? {
 }
 
 ///|
+/// Return a JSON-style validation path for this schema error.
 pub fn ProtocolSchemaError::path(self : ProtocolSchemaError) -> String {
   match self {
     UnknownCommand(method_name)
@@ -106,6 +128,7 @@ pub fn ProtocolSchemaError::path(self : ProtocolSchemaError) -> String {
 }
 
 ///|
+/// Return the expected protocol type for type mismatch errors.
 pub fn ProtocolSchemaError::expected_type(
   self : ProtocolSchemaError,
 ) -> String? {
@@ -125,6 +148,12 @@ pub fn ProtocolSchemaError::expected_type(
 }
 
 ///|
+/// Compact coverage status for bundled protocol registries.
+///
+/// `*_count` fields are derived from the manifest domain summaries.
+/// `*_registry_count` fields are derived from generated lookup registries.
+/// `complete` is true when every manifest command, event, and type has a
+/// registry entry.
 pub(all) struct ProtocolCoverage {
   domain_count : Int
   command_count : Int
@@ -137,41 +166,11 @@ pub(all) struct ProtocolCoverage {
 } derive(Eq, ToJson, Debug)
 
 ///|
-pub(all) struct ProtocolCoverageReport {
-  domain_count : Int
-  source_count : Int
-  command_count : Int
-  command_registry_count : Int
-  command_registry_missing_count : Int
-  event_count : Int
-  event_registry_count : Int
-  event_registry_missing_count : Int
-  type_count : Int
-  type_registry_count : Int
-  type_registry_missing_count : Int
-  command_with_params_count : Int
-  typed_command_params_count : Int
-  typed_command_params_missing_count : Int
-  command_with_returns_count : Int
-  typed_command_result_count : Int
-  typed_command_result_missing_count : Int
-  typed_command_result_decoder_count : Int
-  typed_command_result_decoder_missing_count : Int
-  event_with_params_count : Int
-  typed_event_params_count : Int
-  typed_event_params_missing_count : Int
-  typed_event_decoder_count : Int
-  typed_event_decoder_missing_count : Int
-  typed_command_builder_count : Int
-  typed_command_builder_missing_count : Int
-  typed_event_builder_count : Int
-  typed_event_builder_missing_count : Int
-  typed_domain_type_count : Int
-  typed_domain_type_missing_count : Int
-  complete : Bool
-} derive(Eq, ToJson, Debug)
-
-///|
+/// Return a compact completeness check for command, event, and type registries.
+///
+/// This is intended for generator tests and release checks. It does not measure
+/// generated typed builder coverage; use `protocol_typed_coverage_report` from
+/// `protocol/typed` for that wider check.
 pub fn protocol_coverage() -> ProtocolCoverage {
   let manifest = protocol_manifest()
   let command_count = manifest.command_count()
@@ -195,119 +194,16 @@ pub fn protocol_coverage() -> ProtocolCoverage {
 }
 
 ///|
-pub fn protocol_coverage_report() -> ProtocolCoverageReport {
-  let manifest = protocol_manifest()
-  let command_count = manifest.command_count()
-  let event_count = manifest.event_count()
-  let type_count = manifest.type_count()
-  let command_registry_count = protocol_commands().length()
-  let event_registry_count = protocol_events().length()
-  let type_registry_count = protocol_types().length()
-  let command_with_params_count = protocol_commands()
-    .filter(command => command.parameter_count > 0)
-    .length()
-  let command_with_returns_count = protocol_commands()
-    .filter(command => command.return_count > 0)
-    .length()
-  let event_with_params_count = protocol_events()
-    .filter(event => event.parameter_count > 0)
-    .length()
-  let typed_command_builder_count = protocol_typed_command_builder_count()
-  let typed_command_params_count = protocol_typed_command_params_count()
-  let typed_command_result_count = protocol_typed_command_result_count()
-  let typed_command_result_decoder_count = protocol_typed_command_result_decoder_count()
-  let typed_event_builder_count = protocol_typed_event_builder_count()
-  let typed_event_params_count = protocol_typed_event_params_count()
-  let typed_event_decoder_count = protocol_typed_event_decoder_count()
-  let typed_domain_type_count = protocol_typed_domain_type_count()
-  let command_registry_missing_count = missing_count(
-    command_count, command_registry_count,
-  )
-  let event_registry_missing_count = missing_count(
-    event_count, event_registry_count,
-  )
-  let type_registry_missing_count = missing_count(
-    type_count, type_registry_count,
-  )
-  let typed_command_builder_missing_count = missing_count(
-    command_count, typed_command_builder_count,
-  )
-  let typed_command_params_missing_count = missing_count(
-    command_with_params_count, typed_command_params_count,
-  )
-  let typed_command_result_missing_count = missing_count(
-    command_with_returns_count, typed_command_result_count,
-  )
-  let typed_command_result_decoder_missing_count = missing_count(
-    command_with_returns_count, typed_command_result_decoder_count,
-  )
-  let typed_event_builder_missing_count = missing_count(
-    event_count, typed_event_builder_count,
-  )
-  let typed_event_params_missing_count = missing_count(
-    event_with_params_count, typed_event_params_count,
-  )
-  let typed_event_decoder_missing_count = missing_count(
-    event_with_params_count, typed_event_decoder_count,
-  )
-  let typed_domain_type_missing_count = missing_count(
-    type_count, typed_domain_type_count,
-  )
-  {
-    domain_count: manifest.domain_count(),
-    source_count: manifest.sources.length(),
-    command_count,
-    command_registry_count,
-    command_registry_missing_count,
-    event_count,
-    event_registry_count,
-    event_registry_missing_count,
-    type_count,
-    type_registry_count,
-    type_registry_missing_count,
-    command_with_params_count,
-    typed_command_params_count,
-    typed_command_params_missing_count,
-    command_with_returns_count,
-    typed_command_result_count,
-    typed_command_result_missing_count,
-    typed_command_result_decoder_count,
-    typed_command_result_decoder_missing_count,
-    event_with_params_count,
-    typed_event_params_count,
-    typed_event_params_missing_count,
-    typed_event_decoder_count,
-    typed_event_decoder_missing_count,
-    typed_command_builder_count,
-    typed_command_builder_missing_count,
-    typed_event_builder_count,
-    typed_event_builder_missing_count,
-    typed_domain_type_count,
-    typed_domain_type_missing_count,
-    complete: command_registry_missing_count == 0 &&
-    event_registry_missing_count == 0 &&
-    type_registry_missing_count == 0 &&
-    typed_command_builder_missing_count == 0 &&
-    typed_command_params_missing_count == 0 &&
-    typed_command_result_missing_count == 0 &&
-    typed_command_result_decoder_missing_count == 0 &&
-    typed_event_builder_missing_count == 0 &&
-    typed_event_params_missing_count == 0 &&
-    typed_event_decoder_missing_count == 0 &&
-    typed_domain_type_missing_count == 0,
-  }
-}
-
-///|
-fn missing_count(expected : Int, actual : Int) -> Int {
-  if actual >= expected {
-    0
-  } else {
-    expected - actual
-  }
-}
-
-///|
+/// Build a CDP command after validating method existence and parameter shape.
+///
+/// This function uses the bundled protocol schema only. To additionally verify
+/// that a live browser advertises the command, use `cdp_remote_schema_command`.
+///
+/// # Example
+/// ```mbt nocheck
+/// let command = cdp_schema_command(id=1, method_name="Browser.getVersion")
+/// assert_eq(command.method_name, "Browser.getVersion")
+/// ```
 pub fn cdp_schema_command(
   id~ : Int,
   method_name~ : String,
@@ -316,11 +212,16 @@ pub fn cdp_schema_command(
 ) -> CdpCommandMessage raise ProtocolSchemaError {
   match protocol_command(method_name) {
     Some(command) => command.build_command(id~, params?, session_id?)
-    None => raise ProtocolSchemaError::UnknownCommand(method_name)
+    None => raise UnknownCommand(method_name)
   }
 }
 
 ///|
+/// Build a schema-validated command and require it to exist in a remote schema.
+///
+/// Pass the JSON returned by Chrome's `/json/protocol` as `remote_schema`. This
+/// is useful for end-to-end tests against browsers whose protocol version may
+/// differ from the bundled schema.
 pub fn cdp_remote_schema_command(
   id~ : Int,
   method_name~ : String,
@@ -332,11 +233,12 @@ pub fn cdp_remote_schema_command(
   if protocol_remote_has_command(remote_schema, method_name) {
     command
   } else {
-    raise ProtocolSchemaError::UnsupportedRemoteCommand(method_name)
+    raise UnsupportedRemoteCommand(method_name)
   }
 }
 
 ///|
+/// Return true when a `/json/protocol` schema advertises a CDP command.
 pub fn protocol_remote_has_command(
   remote_schema : Json,
   method_name : String,
@@ -364,6 +266,11 @@ pub fn protocol_remote_has_command(
 }
 
 ///|
+/// Build a CDP event after validating method existence and parameter shape.
+///
+/// This is primarily useful for tests and for code that wants to synthesize
+/// event envelopes with the same validation rules used for incoming event
+/// metadata. Real browser events are parsed with `parse_cdp_incoming`.
 pub fn cdp_schema_event(
   method_name~ : String,
   params? : Json,
@@ -371,11 +278,12 @@ pub fn cdp_schema_event(
 ) -> CdpEventMessage raise ProtocolSchemaError {
   match protocol_event(method_name) {
     Some(event) => event.build_event(params?, session_id?)
-    None => raise ProtocolSchemaError::UnknownEvent(method_name)
+    None => raise UnknownEvent(method_name)
   }
 }
 
 ///|
+// Return true when a remote domain JSON object contains a command name.
 fn remote_domain_has_command(
   domain_fields : Map[String, Json],
   command_name : String,
@@ -397,6 +305,7 @@ fn remote_domain_has_command(
 }
 
 ///|
+// Split `Domain.method` into domain and method components.
 fn split_cdp_method(method_name : String) -> (String, String) {
   match method_name.find(".") {
     Some(index) =>
@@ -406,6 +315,10 @@ fn split_cdp_method(method_name : String) -> (String, String) {
 }
 
 ///|
+/// Build a command from this manifest entry after validating parameters.
+///
+/// Call this method when you already resolved a `ProtocolCommand` and want to
+/// avoid another registry lookup.
 pub fn ProtocolCommand::build_command(
   self : ProtocolCommand,
   id~ : Int,
@@ -417,6 +330,10 @@ pub fn ProtocolCommand::build_command(
 }
 
 ///|
+/// Validate a CDP response against the bundled command return schema.
+///
+/// Error responses are returned unchanged because CDP errors are protocol-level
+/// failures and do not have command-specific result fields.
 pub fn cdp_schema_response(
   method_name~ : String,
   response : CdpResponseMessage,
@@ -426,11 +343,16 @@ pub fn cdp_schema_response(
       command.validate_response(response)
       response
     }
-    None => raise ProtocolSchemaError::UnknownCommand(method_name)
+    None => raise UnknownCommand(method_name)
   }
 }
 
 ///|
+/// Validate a response result against this command's return schema.
+///
+/// CDP error responses are intentionally accepted without result validation.
+/// For successful responses, missing required return fields, unknown return
+/// fields, and modeled primitive type mismatches raise `ProtocolSchemaError`.
 pub fn ProtocolCommand::validate_response(
   self : ProtocolCommand,
   response : CdpResponseMessage,
@@ -447,6 +369,10 @@ pub fn ProtocolCommand::validate_response(
 }
 
 ///|
+/// Build an event from this manifest entry after validating parameters.
+///
+/// Call this method when you already resolved a `ProtocolEvent` and want to
+/// avoid another registry lookup.
 pub fn ProtocolEvent::build_event(
   self : ProtocolEvent,
   params? : Json,
@@ -462,6 +388,10 @@ pub fn ProtocolEvent::build_event(
 }
 
 ///|
+/// Return required parameter names for this command.
+///
+/// Optional compact fields are encoded with a `?` suffix before the optional
+/// `:type` portion and are excluded from this result.
 pub fn ProtocolCommand::required_parameters(
   self : ProtocolCommand,
 ) -> Array[String] {
@@ -471,6 +401,9 @@ pub fn ProtocolCommand::required_parameters(
 }
 
 ///|
+/// Return required result field names for this command.
+///
+/// Commands with no required return fields return an empty array.
 pub fn ProtocolCommand::required_returns(
   self : ProtocolCommand,
 ) -> Array[String] {
@@ -480,6 +413,9 @@ pub fn ProtocolCommand::required_returns(
 }
 
 ///|
+/// Return required parameter names for this event.
+///
+/// Events with no required parameters return an empty array.
 pub fn ProtocolEvent::required_parameters(
   self : ProtocolEvent,
 ) -> Array[String] {
@@ -489,6 +425,9 @@ pub fn ProtocolEvent::required_parameters(
 }
 
 ///|
+/// Return all parameter names for this command.
+///
+/// Optionality and type suffixes are stripped from the compact manifest strings.
 pub fn ProtocolCommand::parameter_names(
   self : ProtocolCommand,
 ) -> Array[String] {
@@ -496,16 +435,23 @@ pub fn ProtocolCommand::parameter_names(
 }
 
 ///|
+/// Return all result field names for this command.
+///
+/// Optionality and type suffixes are stripped from the compact manifest strings.
 pub fn ProtocolCommand::return_names(self : ProtocolCommand) -> Array[String] {
   self.returns.map(protocol_item_name)
 }
 
 ///|
+/// Return all parameter names for this event.
+///
+/// Optionality and type suffixes are stripped from the compact manifest strings.
 pub fn ProtocolEvent::parameter_names(self : ProtocolEvent) -> Array[String] {
   self.parameters.map(protocol_item_name)
 }
 
 ///|
+// Validate this command's parameter object.
 fn ProtocolCommand::validate_params(
   self : ProtocolCommand,
   params? : Json,
@@ -519,6 +465,7 @@ fn ProtocolCommand::validate_params(
 }
 
 ///|
+// Validate required, unknown, and typed parameter fields.
 fn validate_protocol_params(
   method_name : String,
   domain : String,
@@ -532,28 +479,28 @@ fn validate_protocol_params(
     Some(Object(fields)) => {
       for name in required {
         if fields.get(name) is None {
-          raise ProtocolSchemaError::MissingParameter(method_name, name)
+          raise MissingParameter(method_name, name)
         }
       }
       let allowed = parameters.map(protocol_item_name)
       for name, _ in fields {
         if !allowed.contains(name) {
-          raise ProtocolSchemaError::UnknownParameter(method_name, name)
+          raise UnknownParameter(method_name, name)
         }
       }
       validate_protocol_param_types(method_name, domain, parameters, fields)
     }
-    Some(_) => raise ProtocolSchemaError::ExpectedParamsObject(method_name)
+    Some(_) => raise ExpectedParamsObject(method_name)
     None =>
       match required {
-        [first, ..] =>
-          raise ProtocolSchemaError::MissingParameter(method_name, first)
+        [first, ..] => raise MissingParameter(method_name, first)
         [] => ()
       }
   }
 }
 
 ///|
+// Validate parameter JSON values against compact protocol types.
 fn validate_protocol_param_types(
   method_name : String,
   domain : String,
@@ -567,9 +514,7 @@ fn validate_protocol_param_types(
       Some(value) => {
         let expected = protocol_item_type(item)
         if !json_matches_protocol_type(value, domain, expected) {
-          raise ProtocolSchemaError::InvalidParameterType(
-            method_name, name, expected,
-          )
+          raise InvalidParameterType(method_name, name, expected)
         }
       }
       None => ()
@@ -578,6 +523,7 @@ fn validate_protocol_param_types(
 }
 
 ///|
+// Validate required, unknown, and typed response result fields.
 fn validate_protocol_result(
   method_name : String,
   domain : String,
@@ -591,28 +537,28 @@ fn validate_protocol_result(
     Some(Object(fields)) => {
       for name in required {
         if fields.get(name) is None {
-          raise ProtocolSchemaError::MissingReturn(method_name, name)
+          raise MissingReturn(method_name, name)
         }
       }
       let allowed = returns.map(protocol_item_name)
       for name, _ in fields {
         if !allowed.contains(name) {
-          raise ProtocolSchemaError::UnknownReturn(method_name, name)
+          raise UnknownReturn(method_name, name)
         }
       }
       validate_protocol_return_types(method_name, domain, returns, fields)
     }
-    Some(_) => raise ProtocolSchemaError::ExpectedResultObject(method_name)
+    Some(_) => raise ExpectedResultObject(method_name)
     None =>
       match required {
-        [first, ..] =>
-          raise ProtocolSchemaError::MissingReturn(method_name, first)
+        [first, ..] => raise MissingReturn(method_name, first)
         [] => ()
       }
   }
 }
 
 ///|
+// Validate result JSON values against compact protocol types.
 fn validate_protocol_return_types(
   method_name : String,
   domain : String,
@@ -626,9 +572,7 @@ fn validate_protocol_return_types(
       Some(value) => {
         let expected = protocol_item_type(item)
         if !json_matches_protocol_type(value, domain, expected) {
-          raise ProtocolSchemaError::InvalidReturnType(
-            method_name, name, expected,
-          )
+          raise InvalidReturnType(method_name, name, expected)
         }
       }
       None => ()
@@ -637,6 +581,7 @@ fn validate_protocol_return_types(
 }
 
 ///|
+// Extract a field name from a compact `name?:type` item.
 fn protocol_item_name(item : String) -> String {
   let head = item.split(":").to_array()[0].to_owned()
   if head.has_suffix("?") {
@@ -647,11 +592,13 @@ fn protocol_item_name(item : String) -> String {
 }
 
 ///|
+// Return true when a compact protocol item is optional.
 fn protocol_item_optional(item : String) -> Bool {
   item.split(":").to_array()[0].has_suffix("?")
 }
 
 ///|
+// Extract a type name from a compact protocol item.
 fn protocol_item_type(item : String) -> String {
   let parts = item.split(":").to_array()
   match parts {
@@ -661,6 +608,7 @@ fn protocol_item_type(item : String) -> String {
 }
 
 ///|
+// Return true when a JSON value conforms to a compact protocol type.
 fn json_matches_protocol_type(
   value : Json,
   domain : String,
@@ -669,7 +617,13 @@ fn json_matches_protocol_type(
   if expected.has_prefix("array<") {
     return value is Array(_)
   }
-  match protocol_type_kind(domain, expected) {
+  json_matches_protocol_kind(value, protocol_type_kind(domain, expected))
+}
+
+///|
+// Return true when a JSON value conforms to a resolved protocol kind.
+fn json_matches_protocol_kind(value : Json, kind : String) -> Bool {
+  match kind {
     "any" => true
     "string" | "binary" => value is String(_)
     "integer" => json_is_integer(value)
@@ -682,6 +636,7 @@ fn json_matches_protocol_type(
 }
 
 ///|
+// Resolve primitive and domain-local type names to a validation kind.
 fn protocol_type_kind(domain : String, expected : String) -> String {
   match expected {
     "any" | "string" | "binary" | "integer" | "number" | "boolean" | "object" =>
@@ -695,6 +650,7 @@ fn protocol_type_kind(domain : String, expected : String) -> String {
 }
 
 ///|
+// Resolve a protocol type by fully-qualified or domain-local name.
 fn resolve_protocol_type(domain : String, expected : String) -> ProtocolType? {
   if expected.contains(".") {
     protocol_type(expected)
@@ -704,6 +660,7 @@ fn resolve_protocol_type(domain : String, expected : String) -> ProtocolType? {
 }
 
 ///|
+// Return true when a JSON number has no fractional part.
 fn json_is_integer(value : Json) -> Bool {
   match value {
     Number(number, ..) => number.to_int().to_double() == number

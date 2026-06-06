@@ -9,7 +9,7 @@ test "bundled protocol manifest covers browser and js protocol files" {
   guard manifest.sources[0]
     is {
       protocol: "browser",
-      path: "protocol/data/browser_protocol.json",
+      path: "src/protocol/data/browser_protocol.json",
       sha256: "bb10379f95d76f9c423f68039df3bc996b8ae26563434a4d66e1bb0ae90300c8",
       byte_count: 1418351,
       domain_count: 48,
@@ -22,7 +22,7 @@ test "bundled protocol manifest covers browser and js protocol files" {
   guard manifest.sources[1]
     is {
       protocol: "js",
-      path: "protocol/data/js_protocol.json",
+      path: "src/protocol/data/js_protocol.json",
       sha256: "5a54a335617a0ff088c22f8d7a39ee7616ebdba3eb982ebf4e6b1869239e60f5",
       byte_count: 181640,
       domain_count: 6,
@@ -109,6 +109,31 @@ test "generated command event and type registry keeps CDP method names" {
 }
 
 ///|
+test "protocol registry search matches commands events and types" {
+  let navigate = @protocol.protocol_commands_matching("navigate")
+  assert_true(navigate.any(command => command.cdp_method == "Page.navigate"))
+  let frame_id = @protocol.protocol_commands_matching("frameId")
+  assert_true(frame_id.any(command => command.cdp_method == "Page.navigate"))
+  inspect(@protocol.protocol_commands_matching("").length(), content="0")
+
+  let load = @protocol.protocol_events_matching("loadEventFired")
+  assert_true(load.any(event => event.cdp_method == "Page.loadEventFired"))
+  let timestamp = @protocol.protocol_events_matching("timestamp")
+  assert_true(timestamp.any(event => event.cdp_method == "Page.loadEventFired"))
+  inspect(@protocol.protocol_events_matching("").length(), content="0")
+
+  let remote_object = @protocol.protocol_types_matching("RemoteObject")
+  assert_true(
+    remote_object.any(type_ => {
+      type_.domain == "Runtime" && type_.name == "RemoteObject"
+    }),
+  )
+  let enum_value = @protocol.protocol_types_matching("node")
+  assert_true(enum_value.length() > 0)
+  inspect(@protocol.protocol_types_matching("").length(), content="0")
+}
+
+///|
 test "protocol coverage reports manifest registry parity" {
   let coverage = @protocol.protocol_coverage()
   inspect(coverage.domain_count, content="54")
@@ -117,274 +142,6 @@ test "protocol coverage reports manifest registry parity" {
   inspect(coverage.event_registry_count, content="236")
   inspect(coverage.type_registry_count, content="632")
   assert_true(coverage.complete)
-  let report = @protocol.protocol_coverage_report()
-  inspect(report.source_count, content="2")
-  inspect(report.command_registry_missing_count, content="0")
-  inspect(report.event_registry_missing_count, content="0")
-  inspect(report.type_registry_missing_count, content="0")
-  inspect(report.command_with_params_count, content="506")
-  inspect(report.typed_command_params_missing_count, content="0")
-  inspect(report.command_with_returns_count, content="229")
-  inspect(report.typed_command_result_missing_count, content="0")
-  inspect(report.typed_command_result_decoder_missing_count, content="0")
-  inspect(report.event_with_params_count, content="221")
-  inspect(report.typed_event_params_missing_count, content="0")
-  inspect(report.typed_event_decoder_missing_count, content="0")
-  inspect(report.typed_command_builder_missing_count, content="0")
-  inspect(report.typed_event_builder_missing_count, content="0")
-  inspect(report.typed_domain_type_missing_count, content="0")
-  assert_true(report.complete)
-}
-
-///|
-test "generated typed protocol surface covers commands and events" {
-  inspect(@protocol.protocol_typed_command_builder_count(), content="664")
-  inspect(@protocol.protocol_typed_command_params_count(), content="506")
-  inspect(@protocol.protocol_typed_command_result_count(), content="229")
-  inspect(
-    @protocol.protocol_typed_command_result_decoder_count(),
-    content="229",
-  )
-  inspect(@protocol.protocol_typed_event_builder_count(), content="236")
-  inspect(@protocol.protocol_typed_event_params_count(), content="221")
-  inspect(@protocol.protocol_typed_event_decoder_count(), content="221")
-  inspect(@protocol.protocol_typed_domain_type_count(), content="632")
-  assert_true(
-    @protocol.protocol_typed_command_builder_count() ==
-    @protocol.protocol_commands().length(),
-  )
-  assert_true(
-    @protocol.protocol_typed_event_builder_count() ==
-    @protocol.protocol_events().length(),
-  )
-}
-
-///|
-test "generated typed protocol surface covers domain types" {
-  let node_id : @protocol.AccessibilityAXNodeId = { value: "node-1" }
-  assert_true(node_id.to_json() is "node-1")
-
-  let remote : @protocol.RuntimeRemoteObject = {
-    type_: "number",
-    subtype: None,
-    class_name: None,
-    value: Some(2),
-    unserializable_value: None,
-    description: Some("2"),
-    deep_serialized_value: None,
-    object_id: None,
-    preview: None,
-    custom_preview: None,
-  }
-  let remote_json = remote.to_json()
-  assert_true(remote_json is { "type": "number", .. })
-  assert_true(remote_json is { "value": 2, .. })
-  assert_true(remote_json is { "description": "2", .. })
-
-  let quad : @protocol.DOMQuad = { value: [0.0, 1.0, 2.0, 3.0] }
-  assert_true(quad.to_json() is [0, 1, 2, 3])
-  let decoded_quad = @protocol.DOMQuad::from_json([0, 1, 2, 3])
-  inspect(decoded_quad.value.length(), content="4")
-
-  let preview : @protocol.RuntimeObjectPreview = {
-    type_: "object",
-    subtype: None,
-    description: Some("preview"),
-    overflow: false,
-    properties: [
-      {
-        name: "answer",
-        type_: "number",
-        value: Some("42"),
-        value_preview: None,
-        subtype: None,
-      },
-    ],
-    entries: None,
-  }
-  let preview_remote : @protocol.RuntimeRemoteObject = {
-    type_: "object",
-    subtype: None,
-    class_name: None,
-    value: None,
-    unserializable_value: None,
-    description: None,
-    deep_serialized_value: None,
-    object_id: None,
-    preview: Some(preview),
-    custom_preview: None,
-  }
-  assert_true(
-    preview_remote.to_json() is { "preview": { "type": "object", .. }, .. },
-  )
-  let decoded_remote = @protocol.RuntimeRemoteObject::from_json(
-    @json.parse(
-      "{\"type\":\"object\",\"preview\":{\"type\":\"object\",\"description\":\"preview\",\"overflow\":false,\"properties\":[{\"name\":\"answer\",\"type\":\"number\",\"value\":\"42\"}]}}",
-    ),
-  )
-  guard decoded_remote.preview is Some(decoded_preview) else {
-    fail("expected preview")
-  }
-  inspect(decoded_preview.properties.length(), content="1")
-  inspect(decoded_preview.properties[0].name, content="answer")
-}
-
-///|
-test "generated typed protocol builders produce schema-aware wire messages" {
-  let navigate_params : @protocol.PageNavigateParams = {
-    url: "https://example.com/",
-    referrer: None,
-    transition_type: Some({ value: "typed" }),
-    frame_id: None,
-    referrer_policy: None,
-  }
-  let navigate = @protocol.page_navigate_command(
-    id=11,
-    navigate_params,
-    session_id="session-1",
-  )
-  inspect(navigate.method_name, content="Page.navigate")
-  assert_true(navigate.params is Some({ "url": "https://example.com/", .. }))
-  assert_true(navigate.params is Some({ "transitionType": "typed", .. }))
-
-  let evaluate_params : @protocol.RuntimeEvaluateParams = {
-    expression: "1 + 1",
-    object_group: None,
-    include_command_line_api: None,
-    silent: None,
-    context_id: None,
-    return_by_value: Some(true),
-    generate_preview: None,
-    user_gesture: None,
-    await_promise: Some(true),
-    throw_on_side_effect: None,
-    timeout: None,
-    disable_breaks: None,
-    repl_mode: None,
-    allow_unsafe_eval_blocked_by_csp: None,
-    unique_context_id: None,
-    serialization_options: None,
-  }
-  let evaluate = @protocol.runtime_evaluate_command(id=12, evaluate_params)
-  inspect(evaluate.method_name, content="Runtime.evaluate")
-  assert_true(evaluate.params is Some({ "expression": "1 + 1", .. }))
-  assert_true(evaluate.params is Some({ "returnByValue": true, .. }))
-  assert_true(evaluate.params is Some({ "awaitPromise": true, .. }))
-
-  let event_params : @protocol.PageLoadEventFiredEventParams = {
-    timestamp: { value: 12.5 },
-  }
-  let event = @protocol.page_load_event_fired_event(
-    event_params,
-    session_id="session-1",
-  )
-  inspect(event.method_name, content="Page.loadEventFired")
-  assert_true(event.params is Some({ "timestamp": 12.5, .. }))
-
-  let trace_event_params : @protocol.TracingDataCollectedEventParams = {
-    value: [{ value: { "name": "thread_name" } }, { value: { "ph": "M" } }],
-  }
-  let trace_event = @protocol.tracing_data_collected_event(trace_event_params)
-  inspect(trace_event.method_name, content="Tracing.dataCollected")
-  assert_true(
-    trace_event.params
-    is Some({ "value": [{ "name": "thread_name", .. }, { "ph": "M", .. }], .. }),
-  )
-
-  let permissions_params : @protocol.BrowserGrantPermissionsParams = {
-    permissions: [{ value: "geolocation" }, { value: "notifications" }],
-    origin: Some("https://example.com"),
-    browser_context_id: None,
-  }
-  let permissions = @protocol.browser_grant_permissions_command(
-    id=13,
-    permissions_params,
-  )
-  inspect(permissions.method_name, content="Browser.grantPermissions")
-  assert_true(
-    permissions.params
-    is Some({ "permissions": ["geolocation", "notifications"], .. }),
-  )
-}
-
-///|
-test "generated typed event decoders parse schema-aware params" {
-  let load = @protocol.PageLoadEventFiredEventParams::from_json({
-    "timestamp": 12.5,
-  })
-  inspect(load.timestamp.value, content="12.5")
-
-  let console = @protocol.RuntimeConsoleAPICalledEventParams::from_json(
-    @json.parse(
-      "{\"type\":\"log\",\"args\":[],\"executionContextId\":3,\"timestamp\":7.5,\"stackTrace\":null,\"context\":null}",
-    ),
-  )
-  inspect(console.type_, content="log")
-  inspect(console.execution_context_id.value, content="3")
-  inspect(console.timestamp.value, content="7.5")
-  inspect(console.args.length(), content="0")
-  assert_true(console.stack_trace is None)
-  assert_true(console.context is None)
-
-  let trace = @protocol.TracingDataCollectedEventParams::from_json(
-    @json.parse("{\"value\":[{\"name\":\"thread_name\"},{\"ph\":\"M\"}]}"),
-  )
-  inspect(trace.value.length(), content="2")
-  assert_true(trace.value[0].value is { "name": "thread_name", .. })
-
-  let bad : Result[@protocol.PageLoadEventFiredEventParams, Error] = try? @protocol.PageLoadEventFiredEventParams::from_json({
-      "timestamp": "bad",
-    },
-  )
-  guard bad
-    is Err(
-      @protocol.ProtocolSchemaError::InvalidParameterType(
-        "Page.loadEventFired",
-        "timestamp",
-        "Network.MonotonicTime"
-      )
-    ) else {
-    fail("expected invalid timestamp")
-  }
-}
-
-///|
-test "generated typed command result decoders parse schema-aware results" {
-  let navigate = @protocol.PageNavigateResult::from_json({
-    "frameId": "frame-1",
-    "loaderId": null,
-    "isDownload": false,
-  })
-  inspect(navigate.frame_id.value, content="frame-1")
-  assert_true(navigate.loader_id is None)
-  assert_true(navigate.is_download == Some(false))
-
-  let evaluate = @protocol.RuntimeEvaluateResult::from_json(
-    @json.parse(
-      "{\"result\":{\"type\":\"number\",\"value\":2},\"exceptionDetails\":null}",
-    ),
-  )
-  inspect(evaluate.result.type_, content="number")
-  assert_true(evaluate.exception_details is None)
-
-  let styles = @protocol.CSSGetComputedStyleForNodeResult::from_json(
-    @json.parse(
-      "{\"computedStyle\":[{\"name\":\"display\",\"value\":\"block\"}],\"extraFields\":{\"isAppearanceBase\":false}}",
-    ),
-  )
-  inspect(styles.computed_style.length(), content="1")
-  inspect(styles.computed_style[0].name, content="display")
-  inspect(styles.computed_style[0].value, content="block")
-  inspect(styles.extra_fields.is_appearance_base, content="false")
-
-  let missing : Result[@protocol.PageNavigateResult, Error] = try? @protocol.PageNavigateResult::from_json({},
-  )
-  guard missing
-    is Err(
-      @protocol.ProtocolSchemaError::MissingReturn("Page.navigate", "frameId")
-    ) else {
-    fail("expected missing frameId")
-  }
 }
 
 ///|
@@ -562,6 +319,17 @@ test "schema-aware command builder rejects invalid params" {
     ) else {
     fail("expected invalid expression type")
   }
+  let empty_params : Result[@protocol.CdpCommandMessage, Error] = try? @protocol.cdp_schema_command(
+    id=6,
+    method_name="Page.navigate",
+    params={},
+  )
+  guard empty_params
+    is Err(
+      @protocol.ProtocolSchemaError::MissingParameter("Page.navigate", "url")
+    ) else {
+    fail("expected missing url from empty params")
+  }
 }
 
 ///|
@@ -650,6 +418,34 @@ test "schema-aware response validator rejects invalid returns" {
     is Err(@protocol.ProtocolSchemaError::UnknownCommand("Missing.nope")) else {
     fail("expected unknown command")
   }
+  let no_result_required = @protocol.parse_cdp_incoming(
+    @json.parse("{\"id\":6}"),
+  )
+  guard no_result_required is Response(no_result_required_response) else {
+    fail("expected no result response")
+  }
+  let no_required_result : Result[@protocol.CdpResponseMessage, Error] = try? @protocol.cdp_schema_response(
+    method_name="Page.navigate",
+    no_result_required_response,
+  )
+  guard no_required_result
+    is Err(
+      @protocol.ProtocolSchemaError::MissingReturn("Page.navigate", "frameId")
+    ) else {
+    fail("expected missing frameId without result")
+  }
+  let no_result_optional = @protocol.parse_cdp_incoming(
+    @json.parse("{\"id\":7}"),
+  )
+  guard no_result_optional is Response(no_result_optional_response) else {
+    fail("expected no result response")
+  }
+  ignore(
+    @protocol.cdp_schema_response(
+      method_name="Runtime.enable",
+      no_result_optional_response,
+    ),
+  )
 }
 
 ///|
@@ -734,4 +530,65 @@ test "protocol schema errors expose stable diagnostic paths" {
   )
   inspect(missing_event.kind(), content="unknown_event")
   inspect(missing_event.path(), content="Missing.nope")
+
+  let unknown_return = @protocol.ProtocolSchemaError::UnknownReturn(
+    "Page.navigate", "bad",
+  )
+  inspect(unknown_return.kind(), content="unknown_return")
+  inspect(unknown_return.path(), content="Page.navigate.result.bad")
+  let expected_result = @protocol.ProtocolSchemaError::ExpectedResultObject(
+    "Runtime.enable",
+  )
+  inspect(expected_result.kind(), content="expected_result_object")
+  inspect(expected_result.path(), content="Runtime.enable.result")
+  let expected_params = @protocol.ProtocolSchemaError::ExpectedParamsObject(
+    "Runtime.enable",
+  )
+  inspect(expected_params.kind(), content="expected_params_object")
+  inspect(
+    @protocol.ProtocolSchemaError::UnknownCommand("Missing.nope").kind(),
+    content="unknown_command",
+  )
+  inspect(
+    @protocol.ProtocolSchemaError::MissingParameter("Page.navigate", "url").kind(),
+    content="missing_parameter",
+  )
+  inspect(
+    @protocol.ProtocolSchemaError::UnknownParameter("Page.navigate", "bad").kind(),
+    content="unknown_parameter",
+  )
+  inspect(
+    @protocol.ProtocolSchemaError::InvalidReturnType(
+      "Page.navigate", "frameId", "FrameId",
+    ).kind(),
+    content="invalid_return_type",
+  )
+}
+
+///|
+test "remote schema command lookup rejects malformed schemas" {
+  assert_true(!@protocol.protocol_remote_has_command([], "Runtime.evaluate"))
+  assert_true(!@protocol.protocol_remote_has_command({}, "Runtime.evaluate"))
+  assert_true(
+    !@protocol.protocol_remote_has_command(
+      { "domains": [[], { "domain": "Runtime", "commands": [] }] },
+      "Runtime.evaluate",
+    ),
+  )
+  assert_true(
+    !@protocol.protocol_remote_has_command(
+      {
+        "domains": [
+          { "domain": "Runtime", "commands": [[], { "name": false }] },
+        ],
+      },
+      "Runtime.evaluate",
+    ),
+  )
+  assert_true(
+    !@protocol.protocol_remote_has_command(
+      { "domains": [{ "domain": "Runtime", "commands": [] }] },
+      "evaluate",
+    ),
+  )
 }

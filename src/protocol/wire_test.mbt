@@ -60,3 +60,58 @@ test "reject non-integer response id" {
   ] = try? @protocol.parse_cdp_incoming(json)
   guard result is Err(InvalidField("id")) else { fail("expected invalid id") }
 }
+
+///|
+test "reject malformed cdp error and session fields" {
+  let missing_error_code : Result[
+    @protocol.CdpIncomingMessage,
+    @protocol.ProtocolDecodeError,
+  ] = try? @protocol.parse_cdp_incoming({
+    "id": 1,
+    "error": { "message": "failed" },
+  })
+  guard missing_error_code is Err(MissingField("error.code")) else {
+    fail("expected missing error code")
+  }
+
+  let bad_error_code : Result[
+    @protocol.CdpIncomingMessage,
+    @protocol.ProtocolDecodeError,
+  ] = try? @protocol.parse_cdp_incoming({
+    "id": 1,
+    "error": { "code": "bad", "message": "failed" },
+  })
+  guard bad_error_code is Err(InvalidField("error.code")) else {
+    fail("expected invalid error code")
+  }
+
+  let bad_error_message : Result[
+    @protocol.CdpIncomingMessage,
+    @protocol.ProtocolDecodeError,
+  ] = try? @protocol.parse_cdp_incoming({
+    "id": 1,
+    "error": { "code": -32000, "message": false },
+  })
+  guard bad_error_message is Err(InvalidField("message")) else {
+    fail("expected invalid error message")
+  }
+
+  let bad_session : Result[
+    @protocol.CdpIncomingMessage,
+    @protocol.ProtocolDecodeError,
+  ] = try? @protocol.parse_cdp_incoming({
+    "method": "Page.loadEventFired",
+    "sessionId": 1,
+  })
+  guard bad_session is Err(InvalidField("sessionId")) else {
+    fail("expected invalid session id")
+  }
+
+  let missing_method : Result[
+    @protocol.CdpIncomingMessage,
+    @protocol.ProtocolDecodeError,
+  ] = try? @protocol.parse_cdp_incoming({ "params": {} })
+  guard missing_method is Err(MissingField("method")) else {
+    fail("expected missing method")
+  }
+}

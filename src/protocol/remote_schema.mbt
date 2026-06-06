@@ -1,4 +1,9 @@
 ///|
+/// Errors raised while parsing a remote `/json/protocol` schema.
+///
+/// The string payload is a schema path such as `protocol`, `domains`, or
+/// `Browser.commands[]`. Paths are intended for diagnostics and tests, not for
+/// JSON Pointer compatibility.
 pub(all) suberror ProtocolSchemaDiffError {
   ExpectedObject(String)
   MissingField(String)
@@ -6,12 +11,22 @@ pub(all) suberror ProtocolSchemaDiffError {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// One changed command, event, or type in a protocol schema diff.
+///
+/// `name` is the fully qualified command/event/type name. `details` contains
+/// human-readable field differences such as changed flags, parameter lists,
+/// return lists, properties, or enum values.
 pub(all) struct ProtocolSchemaDiffItem {
   name : String
   details : Array[String]
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Counts and domain summaries parsed from a remote protocol schema.
+///
+/// This is the lightweight result returned by `protocol_remote_summary`. It is
+/// useful when callers want to log browser protocol shape without comparing it
+/// against the bundled schema.
 pub(all) struct ProtocolRemoteSummary {
   version : ProtocolVersion
   domain_count : Int
@@ -22,6 +37,16 @@ pub(all) struct ProtocolRemoteSummary {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Diff between the bundled protocol schema and a remote `/json/protocol`.
+///
+/// `compatible` is true when the remote schema contains every bundled domain,
+/// command, event, and type with the same modeled details. Remote-only entries
+/// are reported but do not make the diff incompatible.
+///
+/// Local-only entries indicate the bundled library knows about protocol surface
+/// that the browser does not advertise. Changed entries indicate both sides
+/// contain the item but disagree on modeled flags, fields, return values,
+/// properties, enum values, or type kind.
 pub(all) struct ProtocolSchemaDiffReport {
   local_version : ProtocolVersion
   remote_version : ProtocolVersion
@@ -48,6 +73,7 @@ pub(all) struct ProtocolSchemaDiffReport {
 } derive(Eq, ToJson, Debug)
 
 ///|
+// Parsed remote schema flattened into the same shape as the bundled manifest.
 priv struct RemoteProtocolSchema {
   version : ProtocolVersion
   domains : Array[ProtocolDomainSummary]
@@ -57,6 +83,14 @@ priv struct RemoteProtocolSchema {
 }
 
 ///|
+/// Summarize a remote `/json/protocol` schema.
+///
+/// Use this when you only need counts and domain flags, not a full local-vs-
+/// remote compatibility diff.
+///
+/// The parser accepts Chrome-style protocol JSON and preserves experimental and
+/// deprecated flags, including flags inherited from a domain by its commands,
+/// events, and types.
 pub fn protocol_remote_summary(
   schema : Json,
 ) -> ProtocolRemoteSummary raise ProtocolSchemaDiffError {
@@ -72,6 +106,20 @@ pub fn protocol_remote_summary(
 }
 
 ///|
+/// Compare a remote `/json/protocol` schema with the bundled CDP schema.
+///
+/// The report separates local-only, remote-only, and changed entries so tests
+/// can fail on incompatibilities while still logging browser-specific additions.
+///
+/// Remote-only domains, commands, events, and types are informational because a
+/// newer browser may expose protocol surface that this package has not bundled
+/// yet. Local-only and changed bundled entries make `compatible` false.
+///
+/// # Example
+/// ```mbt nocheck
+/// let report = protocol_schema_diff(remote_schema)
+/// assert_true(report.compatible)
+/// ```
 pub fn protocol_schema_diff(
   remote_schema : Json,
 ) -> ProtocolSchemaDiffReport raise ProtocolSchemaDiffError {
@@ -183,6 +231,7 @@ pub fn protocol_schema_diff(
 }
 
 ///|
+// Parse the top-level remote protocol schema object.
 fn parse_remote_protocol_schema(
   schema : Json,
 ) -> RemoteProtocolSchema raise ProtocolSchemaDiffError {
@@ -237,6 +286,7 @@ fn parse_remote_protocol_schema(
 }
 
 ///|
+// Parse one remote command into bundled command metadata shape.
 fn parse_remote_command(
   protocol : String,
   domain : String,
@@ -276,6 +326,7 @@ fn parse_remote_command(
 }
 
 ///|
+// Parse one remote event into bundled event metadata shape.
 fn parse_remote_event(
   protocol : String,
   domain : String,
@@ -307,6 +358,7 @@ fn parse_remote_event(
 }
 
 ///|
+// Parse one remote domain type into bundled type metadata shape.
 fn parse_remote_type(
   protocol : String,
   domain : String,
@@ -341,6 +393,7 @@ fn parse_remote_type(
 }
 
 ///|
+// Parse the remote protocol version object.
 fn parse_protocol_version(
   json : Json,
 ) -> ProtocolVersion raise ProtocolSchemaDiffError {
@@ -352,6 +405,7 @@ fn parse_protocol_version(
 }
 
 ///|
+// Reuse the bundled protocol bucket for known domains and `remote` otherwise.
 fn remote_domain_protocol(domain : String) -> String {
   match protocol_manifest().find_domain(domain) {
     Some(local_domain) => local_domain.protocol
@@ -360,6 +414,7 @@ fn remote_domain_protocol(domain : String) -> String {
 }
 
 ///|
+// Convert remote field JSON objects to compact field strings.
 fn field_summaries(
   items : Array[Json],
 ) -> Array[String] raise ProtocolSchemaDiffError {
@@ -367,6 +422,7 @@ fn field_summaries(
 }
 
 ///|
+// Convert one remote field JSON object to `name?:kind`.
 fn field_summary(item : Json) -> String raise ProtocolSchemaDiffError {
   let fields = json_object_fields(item, "field")
   let name = schema_required_string(fields, "name")
@@ -375,6 +431,7 @@ fn field_summary(item : Json) -> String raise ProtocolSchemaDiffError {
 }
 
 ///|
+// Convert remote field JSON objects to detailed field summaries.
 fn field_detail_summaries(
   items : Array[Json],
   inherited_experimental~ : Bool,
@@ -386,6 +443,7 @@ fn field_detail_summaries(
 }
 
 ///|
+// Convert one remote field JSON object to a detailed field summary.
 fn field_detail_summary(
   item : Json,
   inherited_experimental~ : Bool,
@@ -403,6 +461,7 @@ fn field_detail_summary(
 }
 
 ///|
+// Resolve the schema kind for a parameter, return, or property object.
 fn value_kind(
   fields : Map[String, Json],
 ) -> String raise ProtocolSchemaDiffError {
@@ -418,6 +477,7 @@ fn value_kind(
 }
 
 ///|
+// Resolve an array field's item kind.
 fn array_item_kind(
   fields : Map[String, Json],
 ) -> String raise ProtocolSchemaDiffError {
@@ -429,6 +489,7 @@ fn array_item_kind(
 }
 
 ///|
+// Resolve a remote type declaration kind.
 fn type_kind(
   fields : Map[String, Json],
 ) -> String raise ProtocolSchemaDiffError {
@@ -443,6 +504,7 @@ fn type_kind(
 }
 
 ///|
+// Parse string enum values from a remote schema array.
 fn string_values(
   items : Array[Json],
 ) -> Array[String] raise ProtocolSchemaDiffError {
@@ -457,6 +519,7 @@ fn string_values(
 }
 
 ///|
+// Return domain names present on the left side and absent on the right.
 fn missing_domains(
   left : Array[ProtocolDomainSummary],
   right : Array[ProtocolDomainSummary],
@@ -471,6 +534,7 @@ fn missing_domains(
 }
 
 ///|
+// Index bundled commands by CDP method.
 fn protocol_command_index() -> Map[String, ProtocolCommand] {
   let index : Map[String, ProtocolCommand] = {}
   for command in protocol_commands() {
@@ -480,6 +544,7 @@ fn protocol_command_index() -> Map[String, ProtocolCommand] {
 }
 
 ///|
+// Index remote commands by CDP method.
 fn remote_command_index(
   commands : Array[ProtocolCommand],
 ) -> Map[String, ProtocolCommand] {
@@ -491,6 +556,7 @@ fn remote_command_index(
 }
 
 ///|
+// Index bundled events by CDP method.
 fn protocol_event_index() -> Map[String, ProtocolEvent] {
   let index : Map[String, ProtocolEvent] = {}
   for event in protocol_events() {
@@ -500,6 +566,7 @@ fn protocol_event_index() -> Map[String, ProtocolEvent] {
 }
 
 ///|
+// Index remote events by CDP method.
 fn remote_event_index(
   events : Array[ProtocolEvent],
 ) -> Map[String, ProtocolEvent] {
@@ -511,6 +578,7 @@ fn remote_event_index(
 }
 
 ///|
+// Index bundled types by fully-qualified type name.
 fn protocol_type_index() -> Map[String, ProtocolType] {
   let index : Map[String, ProtocolType] = {}
   for type_ in protocol_types() {
@@ -520,6 +588,7 @@ fn protocol_type_index() -> Map[String, ProtocolType] {
 }
 
 ///|
+// Index remote types by fully-qualified type name.
 fn remote_type_index(types : Array[ProtocolType]) -> Map[String, ProtocolType] {
   let index : Map[String, ProtocolType] = {}
   for type_ in types {
@@ -529,6 +598,7 @@ fn remote_type_index(types : Array[ProtocolType]) -> Map[String, ProtocolType] {
 }
 
 ///|
+// Return modeled differences between two command summaries.
 fn command_diff_details(
   bundled : ProtocolCommand,
   remote : ProtocolCommand,
@@ -547,6 +617,7 @@ fn command_diff_details(
 }
 
 ///|
+// Return modeled differences between two event summaries.
 fn event_diff_details(
   bundled : ProtocolEvent,
   remote : ProtocolEvent,
@@ -564,6 +635,7 @@ fn event_diff_details(
 }
 
 ///|
+// Return modeled differences between two type summaries.
 fn type_diff_details(
   bundled : ProtocolType,
   remote : ProtocolType,
@@ -585,6 +657,7 @@ fn type_diff_details(
 }
 
 ///|
+// Append a boolean field diff when values differ.
 fn push_flag_diff(
   details : Array[String],
   name : String,
@@ -597,6 +670,7 @@ fn push_flag_diff(
 }
 
 ///|
+// Append an array field diff when values differ.
 fn push_array_diff(
   details : Array[String],
   name : String,
@@ -611,6 +685,7 @@ fn push_array_diff(
 }
 
 ///|
+// Compare string arrays in order.
 fn string_arrays_equal(left : Array[String], right : Array[String]) -> Bool {
   if left.length() != right.length() {
     return false
@@ -624,11 +699,13 @@ fn string_arrays_equal(left : Array[String], right : Array[String]) -> Bool {
 }
 
 ///|
+// Return `Domain.Type` for a protocol type summary.
 fn protocol_type_name(type_ : ProtocolType) -> String {
   "\{type_.domain}.\{type_.name}"
 }
 
 ///|
+// Require a JSON value to be an object.
 fn json_object_fields(
   value : Json,
   name : String,
@@ -640,6 +717,7 @@ fn json_object_fields(
 }
 
 ///|
+// Read a required JSON field.
 fn required_json(
   fields : Map[String, Json],
   name : String,
@@ -651,6 +729,7 @@ fn required_json(
 }
 
 ///|
+// Require a JSON value to be an array.
 fn json_array(
   value : Json,
   name : String,
@@ -662,6 +741,7 @@ fn json_array(
 }
 
 ///|
+// Read an optional JSON array field, defaulting to empty.
 fn optional_json_array(
   fields : Map[String, Json],
   name : String,
@@ -673,6 +753,7 @@ fn optional_json_array(
 }
 
 ///|
+// Read a required string field from schema JSON.
 fn schema_required_string(
   fields : Map[String, Json],
   name : String,
@@ -685,6 +766,7 @@ fn schema_required_string(
 }
 
 ///|
+// Read an optional string field from schema JSON.
 fn schema_optional_string(
   fields : Map[String, Json],
   name : String,
@@ -697,6 +779,7 @@ fn schema_optional_string(
 }
 
 ///|
+// Read an optional boolean field from schema JSON, defaulting to false.
 fn optional_bool(
   fields : Map[String, Json],
   name : String,

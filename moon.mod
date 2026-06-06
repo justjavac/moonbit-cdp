@@ -1,4 +1,4 @@
-name = "justjavac/moonbit_cdp"
+name = "justjavac/cdp"
 
 version = "0.1.0"
 
@@ -9,10 +9,14 @@ import {
 
 repository = ""
 
-license = "Apache-2.0"
+license = "MIT"
 
 keywords = [ ]
 
-description = ""
+description = "MoonBit Chrome DevTools Protocol library"
 
 preferred_target = "native"
+
+options(
+  source: "src",
+)

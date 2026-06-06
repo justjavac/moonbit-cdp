@@ -1,67 +1,32 @@
-# justjavac/moonbit_cdp
+# justjavac/cdp
 
-MoonBit Chrome DevTools Protocol library and CLI.
+![Non-generated library coverage](https://img.shields.io/badge/non--generated%20library%20coverage-100%25-brightgreen.svg)
 
-This repository is now CDP-only. It keeps the generated protocol surface,
-remote debugging discovery, WebSocket CDP client, low-level CLI commands, and
-real-browser E2E tests. Agent-browser-style automation commands, daemon/session
-runtime, providers, dashboard, chat, recording, screenshot diff, auth vault,
-state, cookies, storage, and other high-level browser helpers have been removed.
+MoonBit library for the Chrome DevTools Protocol (CDP).
 
 ## Packages
 
-- `protocol`: bundled Chrome DevTools Protocol schema, generated command
-  builders, event builders, result decoders, and generic schema validation.
-- `connection`: remote debugging endpoint discovery, WebSocket CDP client,
-  target attach/create helpers used by E2E, and optional Chrome launch helpers.
-- `cli`: CDP-only command parser.
-- `cmd/main`: native CLI entry point.
+- `justjavac/cdp/protocol`: CDP wire types, bundled manifest, schema
+  validation, remote schema diff.
+- `justjavac/cdp/protocol/typed`: generated params, command builders, event
+  builders, result decoders.
+- `justjavac/cdp/client`: discovery, WebSocket client, events, targets,
+  browser launch helpers.
 
-## CLI
+## Minimal Use
 
-Targets can be a remote debugging port, `host:port`, HTTP DevTools endpoint, or
-direct browser/page WebSocket URL.
+```mbt nocheck
+let target = @client.parse_cdp_target("9222")
+let browser = @client.connect_cdp_browser_target(target)
+defer browser.close()
 
-```bash
-moon run cmd/main --target native -- version
-moon run cmd/main --target native -- connect 9222
-moon run cmd/main --target native -- cdp schema 9222
-moon run cmd/main --target native -- cdp targets 9222
-moon run cmd/main --target native -- cdp send 9222 Browser.getVersion
-moon run cmd/main --target native -- cdp send 9222 Runtime.evaluate '{"expression":"1+1","returnByValue":true}' --session <session-id>
-moon run cmd/main --target native -- cdp attach 9222 <target-id>
-moon run cmd/main --target native -- cdp events 9222 --method Page.loadEventFired --timeout 5000
+let response = browser.send_schema_command("Browser.getVersion")
+println(@client.cdp_response_result_json(response).stringify())
 ```
 
-## E2E
+For page domains:
 
-Unit tests run without a browser:
-
-```bash
-moon test
+```mbt nocheck
+let page = @client.connect_cdp_page_target(@client.parse_cdp_target("9222"))
+defer page.close()
 ```
-
-Real browser E2E is opt-in:
-
-```bash
-MBT_CDP_E2E=1 moon test connection --filter "*real Chrome CDP E2E*"
-```
-
-Useful environment variables:
-
-- `MBT_CDP_TARGET`: existing remote debugging endpoint, for example `9222` or
-  `http://127.0.0.1:9222`.
-- `MBT_CDP_BROWSER`: Chrome/Edge/Chromium executable path used when the test
-  should launch a browser itself.
-- `MBT_CDP_E2E_HEADLESS=0`: run launched browser headed.
-- `MBT_CDP_E2E_PROFILE`: user data directory for launched browser E2E.
-
-The E2E test checks `/json/version`, `/json/list`, target creation, attach,
-Page/Runtime/DOM/Network schema commands, event buffering, and cleanup through
-CDP commands.
-
-## Protocol Coverage
-
-The bundled protocol currently covers 54 domains, 664 commands, 236 events, and
-632 types. See `docs/CDP_PROTOCOL.md`, `docs/CDP_PROTOCOL_STATUS.md`, and
-`docs/CDP_E2E.md` for details.

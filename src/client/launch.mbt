@@ -238,10 +238,8 @@ pub fn chrome_launch_args(options : CdpLaunchOptions) -> Array[String] {
 // Remove a stale DevToolsActivePort file before asking Chrome to choose a port.
 async fn remove_devtools_active_port_file(user_data_dir : String) -> Unit {
   let path = devtools_active_port_path(user_data_dir)
-  if @fs.exists(path) {
-    @fs.remove(path) catch {
-      _ => ()
-    }
+  if @fs.exists(path) && @fs.kind(path, follow_symlink=false) is Regular {
+    ignore(try? @fs.remove(path))
   }
 }
 

@@ -37,16 +37,16 @@ PowerShell:
 ```powershell
 $env:MBT_CDP_TARGET = "9222"
 $env:MBT_CDP_EXAMPLE = "discover_version"
-moon -C examples run .
+moon -C examples run cmd
 $env:MBT_CDP_EXAMPLE = "runtime_evaluate"
-moon -C examples run .
+moon -C examples run cmd
 ```
 
 POSIX shell:
 
 ```bash
-MBT_CDP_TARGET=9222 MBT_CDP_EXAMPLE=discover_version moon -C examples run .
-MBT_CDP_TARGET=9222 MBT_CDP_EXAMPLE=runtime_evaluate moon -C examples run .
+MBT_CDP_TARGET=9222 MBT_CDP_EXAMPLE=discover_version moon -C examples run cmd
+MBT_CDP_TARGET=9222 MBT_CDP_EXAMPLE=runtime_evaluate moon -C examples run cmd
 ```
 
 `runtime_evaluate` needs at least one page target in the remote debugging

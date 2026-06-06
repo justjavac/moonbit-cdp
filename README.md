@@ -92,10 +92,10 @@ Typed command builders live in `justjavac/cdp/protocol/typed`, for example
 ```powershell
 $env:MBT_CDP_TARGET = "9222"
 $env:MBT_CDP_EXAMPLE = "discover_version"
-moon -C examples run .
+moon -C examples run cmd
 
 $env:MBT_CDP_EXAMPLE = "runtime_evaluate"
-moon -C examples run .
+moon -C examples run cmd
 ```
 
 ## Checks

@@ -18,8 +18,14 @@ Then run an example:
 ```powershell
 $env:MBT_CDP_TARGET = "9222"
 $env:MBT_CDP_EXAMPLE = "discover_version"
-moon -C examples run .
+moon run cmd
 
 $env:MBT_CDP_EXAMPLE = "runtime_evaluate"
-moon -C examples run .
+moon run cmd
+```
+
+From the repository root, prefix the command with `-C examples`:
+
+```powershell
+moon -C examples run cmd
 ```

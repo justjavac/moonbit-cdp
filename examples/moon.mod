@@ -1,12 +1,12 @@
 name = "justjavac/cdp_examples"
 
-version = "0.1.2"
+version = "0.1.3"
 
 readme = "README.mbt.md"
 
 import {
   "moonbitlang/async@0.19.1",
-  "justjavac/cdp@0.1.2",
+  "justjavac/cdp@0.1.3",
 }
 
 repository = "https://github.com/justjavac/moonbit-cdp"

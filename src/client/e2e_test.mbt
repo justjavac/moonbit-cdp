@@ -16,13 +16,9 @@ async fn e2e_browser_path() -> String? {
   match e2e_env("MBT_CDP_BROWSER") {
     Some(path) => Some(path)
     None =>
-      match e2e_env("AGENT_BROWSER_EXECUTABLE_PATH") {
-        Some(path) => Some(path)
-        None =>
-          Some(@connection.resolve_chrome_executable()) catch {
-            @connection.BrowserLaunchError::BrowserNotFound => None
-            err => raise err
-          }
+      Some(@client.resolve_chrome_executable()) catch {
+        @client.BrowserLaunchError::BrowserNotFound => None
+        err => raise err
       }
   }
 }
@@ -34,8 +30,7 @@ fn e2e_headless() -> Bool {
 
 ///|
 fn e2e_browser_path_is_explicit() -> Bool {
-  e2e_env("MBT_CDP_BROWSER") is Some(_) ||
-  e2e_env("AGENT_BROWSER_EXECUTABLE_PATH") is Some(_)
+  e2e_env("MBT_CDP_BROWSER") is Some(_)
 }
 
 ///|
@@ -52,7 +47,7 @@ struct E2eFailureContext {
   target : String
   source : String
   mut version_metadata : String?
-  mut client : @connection.CdpClient?
+  mut client : @client.CdpClient?
 }
 
 ///|
@@ -70,12 +65,12 @@ fn e2e_optional(value : String?) -> String {
 }
 
 ///|
-fn e2e_version_metadata(version : @connection.CdpVersionInfo) -> String {
+fn e2e_version_metadata(version : @client.CdpVersionInfo) -> String {
   "Browser=\{version.browser}; Protocol-Version=\{version.protocol_version}; WebSocket=\{version.web_socket_debugger_url}"
 }
 
 ///|
-fn e2e_last_request(client : @connection.CdpClient?) -> String {
+fn e2e_last_request(client : @client.CdpClient?) -> String {
   match client {
     Some(client) =>
       match client.last_cdp_request() {
@@ -88,7 +83,7 @@ fn e2e_last_request(client : @connection.CdpClient?) -> String {
 }
 
 ///|
-fn e2e_last_response(client : @connection.CdpClient?) -> String {
+fn e2e_last_response(client : @client.CdpClient?) -> String {
   match client {
     Some(client) =>
       match client.last_cdp_response() {
@@ -109,7 +104,7 @@ fn e2e_response_error(response : @protocol.CdpResponseMessage) -> String {
 }
 
 ///|
-fn e2e_last_event(client : @connection.CdpClient?) -> String {
+fn e2e_last_event(client : @client.CdpClient?) -> String {
   match client {
     Some(client) =>
       match client.last_cdp_event() {
@@ -155,7 +150,7 @@ fn e2e_required_json(fields : Map[String, Json], name : String) -> Json raise {
 
 ///|
 async fn e2e_evaluate_value(
-  client : @connection.CdpClient,
+  client : @client.CdpClient,
   session_id : String,
   expression : String,
 ) -> Json? {
@@ -169,7 +164,7 @@ async fn e2e_evaluate_value(
     session_id~,
   )
   let result = e2e_required_object(
-    @connection.cdp_response_result_json(response),
+    @client.cdp_response_result_json(response),
     "Runtime.evaluate result",
   )
   let remote_object = e2e_required_object(
@@ -181,7 +176,7 @@ async fn e2e_evaluate_value(
 
 ///|
 async fn e2e_query_node_id(
-  client : @connection.CdpClient,
+  client : @client.CdpClient,
   session_id : String,
   selector : String,
 ) -> Int {
@@ -191,7 +186,7 @@ async fn e2e_query_node_id(
     session_id~,
   )
   let document_result = e2e_required_object(
-    @connection.cdp_response_result_json(document),
+    @client.cdp_response_result_json(document),
     "DOM.getDocument result",
   )
   let root = e2e_required_object(
@@ -208,7 +203,7 @@ async fn e2e_query_node_id(
     session_id~,
   )
   let query_result = e2e_required_object(
-    @connection.cdp_response_result_json(query),
+    @client.cdp_response_result_json(query),
     "DOM.querySelector result",
   )
   e2e_required_int(query_result, "nodeId")
@@ -216,7 +211,7 @@ async fn e2e_query_node_id(
 
 ///|
 async fn run_real_cdp_e2e(
-  target : @connection.CdpTarget,
+  target : @client.CdpTarget,
   source : String,
   browser_path? : String,
 ) -> Unit {
@@ -228,7 +223,7 @@ async fn run_real_cdp_e2e(
     client: None,
   }
   try {
-    let version = @connection.discover_version(target)
+    let version = @client.discover_version(target)
     context.version_metadata = Some(e2e_version_metadata(version))
     if version.web_socket_debugger_url == "" {
       fail(
@@ -241,13 +236,13 @@ async fn run_real_cdp_e2e(
     if version.protocol_version == "" {
       fail("E2E \{source}: /json/version did not expose Protocol-Version")
     }
-    let targets_before = @connection.discover_targets(target)
+    let targets_before = @client.discover_targets(target)
     if targets_before.length() == 0 {
       fail(
         "E2E \{source}: /json/list returned no targets before test page creation",
       )
     }
-    let client = @connection.connect_cdp_browser_target(target)
+    let client = @client.connect_cdp_browser_target(target)
     context.client = Some(client)
     defer client.close()
     let target_id = client.create_target(url="about:blank")
@@ -321,7 +316,7 @@ async fn run_real_cdp_e2e(
       }),
     )
     @async.sleep(200)
-    let targets_after = @connection.discover_targets(target)
+    let targets_after = @client.discover_targets(target)
     for item in targets_after {
       if item.target_id == target_id {
         fail("E2E \{source}: closed target \{target_id} is still listed")
@@ -334,8 +329,8 @@ async fn run_real_cdp_e2e(
 
 ///|
 async fn e2e_close_launched_browser(endpoint : String) -> Unit {
-  let client = @connection.connect_cdp_browser_target(
-    @connection.parse_cdp_target(endpoint),
+  let client = @client.connect_cdp_browser_target(
+    @client.parse_cdp_target(endpoint),
   )
   defer client.close()
   ignore(client.send_command("Browser.close"))
@@ -352,7 +347,7 @@ async test "real Chrome CDP E2E smoke test (opt-in)" {
   }
   match e2e_env("MBT_CDP_TARGET") {
     Some(value) => {
-      let target = @connection.parse_cdp_target(value)
+      let target = @client.parse_cdp_target(value)
       run_real_cdp_e2e(target, "MBT_CDP_TARGET=\{value}")
     }
     None =>
@@ -367,7 +362,7 @@ async test "real Chrome CDP E2E smoke test (opt-in)" {
         Some(browser_path) => {
           let explicit_browser = e2e_browser_path_is_explicit()
           let options = {
-            ..@connection.default_launch_options(),
+            ..@client.default_launch_options(),
             browser_path: Some(browser_path),
             port: 0,
             user_data_dir: e2e_profile_dir(),
@@ -376,8 +371,8 @@ async test "real Chrome CDP E2E smoke test (opt-in)" {
             url: Some("about:blank"),
             extra_args: ["--disable-gpu", "--no-sandbox"],
           }
-          let launch = @connection.launch_browser(options) catch {
-            @connection.BrowserLaunchError::BrowserNotReady(_) if !explicit_browser => {
+          let launch = @client.launch_browser(options) catch {
+            @client.BrowserLaunchError::BrowserNotReady(_) if !explicit_browser => {
               inspect(
                 "skip: auto-discovered Chrome did not expose a CDP endpoint",
                 content="skip: auto-discovered Chrome did not expose a CDP endpoint",
@@ -388,7 +383,7 @@ async test "real Chrome CDP E2E smoke test (opt-in)" {
           }
           try {
             run_real_cdp_e2e(
-              @connection.parse_cdp_target(launch.endpoint),
+              @client.parse_cdp_target(launch.endpoint),
               "auto-launched Chrome on \{launch.endpoint}",
               browser_path~,
             )

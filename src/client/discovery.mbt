@@ -1,4 +1,23 @@
 ///|
+/// Errors raised while normalizing a remote debugging target or reading Chrome's
+/// HTTP discovery endpoints.
+///
+/// Use `diagnostic` when presenting the error in CLI output or test logs,
+/// because it gives callers a stable `kind`, `path`, and optional metadata.
+///
+/// Variants map to the discovery stage that failed:
+///
+/// - `InvalidTarget`: the user-supplied target string or derived URL could not
+///   be parsed as a supported CDP target.
+/// - `HttpStatus`: Chrome's discovery endpoint responded with a non-2xx status.
+/// - `MissingWebSocketDebuggerUrl`: `/json/version` did not include the
+///   browser-level WebSocket URL.
+/// - `MissingTargetWebSocketDebuggerUrl`: a selected `/json/list` target did
+///   not include a page-level WebSocket URL.
+/// - `NoMatchingTarget`: `/json/list` was valid but no target matched the
+///   supplied filters.
+/// - `InvalidVersionResponse`: discovery JSON was present but not in the shape
+///   required by this library.
 pub(all) suberror DiscoveryError {
   InvalidTarget(String)
   HttpStatus(Int, String)
@@ -9,6 +28,11 @@ pub(all) suberror DiscoveryError {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Structured details for a `DiscoveryError`.
+///
+/// The `path` field points at the target string, HTTP request, or JSON field
+/// that failed, while optional fields are populated only for matching error
+/// variants.
 pub(all) struct DiscoveryErrorDiagnostic {
   kind : String
   target : String?
@@ -21,6 +45,13 @@ pub(all) struct DiscoveryErrorDiagnostic {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Convert a discovery error into stable structured diagnostic data.
+///
+/// # Example
+/// ```mbt nocheck
+/// let diagnostic = DiscoveryError::InvalidTarget("chrome").diagnostic()
+/// assert_eq(diagnostic.kind, "invalid_target")
+/// ```
 pub fn DiscoveryError::diagnostic(
   self : DiscoveryError,
 ) -> DiscoveryErrorDiagnostic {
@@ -37,6 +68,7 @@ pub fn DiscoveryError::diagnostic(
 }
 
 ///|
+/// Return the stable machine-readable error kind.
 pub fn DiscoveryError::kind(self : DiscoveryError) -> String {
   match self {
     InvalidTarget(_) => "invalid_target"
@@ -50,6 +82,7 @@ pub fn DiscoveryError::kind(self : DiscoveryError) -> String {
 }
 
 ///|
+/// Return a JSON-style path identifying where discovery failed.
 pub fn DiscoveryError::path(self : DiscoveryError) -> String {
   match self {
     InvalidTarget(_) => "target"
@@ -63,6 +96,7 @@ pub fn DiscoveryError::path(self : DiscoveryError) -> String {
 }
 
 ///|
+/// Return a human-readable error message suitable for CLI output.
 pub fn DiscoveryError::message(self : DiscoveryError) -> String {
   match self {
     InvalidTarget(target) => "invalid CDP target: \{target}"
@@ -80,6 +114,7 @@ pub fn DiscoveryError::message(self : DiscoveryError) -> String {
 }
 
 ///|
+/// Return the invalid target string when the error came from target parsing.
 pub fn DiscoveryError::target(self : DiscoveryError) -> String? {
   match self {
     InvalidTarget(target) => Some(target)
@@ -88,6 +123,7 @@ pub fn DiscoveryError::target(self : DiscoveryError) -> String? {
 }
 
 ///|
+/// Return the HTTP status code when a discovery request failed.
 pub fn DiscoveryError::http_status(self : DiscoveryError) -> Int? {
   match self {
     HttpStatus(code, _) => Some(code)
@@ -96,6 +132,7 @@ pub fn DiscoveryError::http_status(self : DiscoveryError) -> Int? {
 }
 
 ///|
+/// Return the HTTP reason phrase when a discovery request failed.
 pub fn DiscoveryError::reason(self : DiscoveryError) -> String? {
   match self {
     HttpStatus(_, reason) => Some(reason)
@@ -104,6 +141,7 @@ pub fn DiscoveryError::reason(self : DiscoveryError) -> String? {
 }
 
 ///|
+/// Return the target id whose `webSocketDebuggerUrl` was missing.
 pub fn DiscoveryError::target_id(self : DiscoveryError) -> String? {
   match self {
     MissingTargetWebSocketDebuggerUrl(target_id) => Some(target_id)
@@ -112,6 +150,7 @@ pub fn DiscoveryError::target_id(self : DiscoveryError) -> String? {
 }
 
 ///|
+/// Return the selector that failed to match any discovered target.
 pub fn DiscoveryError::selector(self : DiscoveryError) -> String? {
   match self {
     NoMatchingTarget(selector) => Some(selector)
@@ -120,12 +159,30 @@ pub fn DiscoveryError::selector(self : DiscoveryError) -> String? {
 }
 
 ///|
+/// A CDP connection target accepted by discovery helpers.
+///
+/// `WebSocket` targets are already resolved and can be connected directly.
+/// `Http` targets point at a Chrome remote debugging base URL and are resolved
+/// through `/json/version` or `/json/list`.
+///
+/// `parse_cdp_target` is the preferred way to construct this enum from user
+/// input. It normalizes ports and `host:port` strings into `Http` targets and
+/// strips one trailing slash from HTTP base URLs.
 pub(all) enum CdpTarget {
   WebSocket(String)
   Http(String)
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Metadata returned by Chrome's `/json/version` discovery endpoint.
+///
+/// `web_socket_debugger_url` is normalized for local `127.0.0.1` endpoints so
+/// callers can connect to the same host they used for discovery. `raw` retains
+/// the original JSON object for fields not modeled by this struct.
+///
+/// `browser` and `protocol_version` are required by Chrome's response and are
+/// therefore non-optional. `user_agent`, `v8_version`, and `webkit_version`
+/// are optional because non-Chrome-compatible endpoints may omit them.
 pub(all) struct CdpVersionInfo {
   browser : String
   protocol_version : String
@@ -137,6 +194,16 @@ pub(all) struct CdpVersionInfo {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// A single target returned by Chrome's `/json/list` endpoint.
+///
+/// Page selection helpers match against `target_id`, `target_type`, `url`, and
+/// `title`; `raw` preserves the full target object for consumers that need
+/// Chrome-specific fields.
+///
+/// Common `target_type` values include `page`, `iframe`, `service_worker`, and
+/// `shared_worker`. Page WebSocket URLs are optional in Chrome's schema, so
+/// callers that require a direct page socket should handle
+/// `MissingTargetWebSocketDebuggerUrl`.
 pub(all) struct CdpDiscoveredTarget {
   target_id : String
   target_type : String
@@ -149,10 +216,21 @@ pub(all) struct CdpDiscoveredTarget {
 } derive(Eq, ToJson, Debug)
 
 ///|
+/// Parse a user-supplied target string into a CDP target.
+///
+/// Supported forms are full WebSocket URLs (`ws://` or `wss://`), HTTP(S)
+/// discovery base URLs, numeric ports, and `host:port` pairs. Numeric ports are
+/// normalized to `http://127.0.0.1:<port>`.
+///
+/// # Example
+/// ```mbt nocheck
+/// let target = parse_cdp_target("9222")
+/// assert_eq(target, CdpTarget::Http("http://127.0.0.1:9222"))
+/// ```
 pub fn parse_cdp_target(raw : String) -> CdpTarget raise DiscoveryError {
   let target = raw.trim().to_owned()
   if target == "" {
-    raise DiscoveryError::InvalidTarget(raw)
+    raise InvalidTarget(raw)
   }
   if target.has_prefix("ws://") || target.has_prefix("wss://") {
     WebSocket(target)
@@ -163,11 +241,23 @@ pub fn parse_cdp_target(raw : String) -> CdpTarget raise DiscoveryError {
   } else if target_is_host_port(target) {
     Http("http://\{target}")
   } else {
-    raise DiscoveryError::InvalidTarget(raw)
+    raise InvalidTarget(raw)
   }
 }
 
 ///|
+/// Resolve a target to the browser-level CDP WebSocket URL.
+///
+/// WebSocket targets are returned unchanged. HTTP targets are queried through
+/// `/json/version` and must include a `webSocketDebuggerUrl` field.
+///
+/// # Example
+/// ```mbt nocheck
+/// async test {
+///   let url = discover_web_socket_url(CdpTarget::Http("http://127.0.0.1:9222"))
+///   assert_true(url.has_prefix("ws://"))
+/// }
+/// ```
 pub async fn discover_web_socket_url(target : CdpTarget) -> String {
   if target is WebSocket(url) {
     return url
@@ -182,11 +272,31 @@ pub async fn discover_web_socket_url(target : CdpTarget) -> String {
 }
 
 ///|
+/// Resolve a target to the browser-level WebSocket URL.
+///
+/// This is an explicit browser-target alias for `discover_web_socket_url`, used
+/// by callers that want their target choice to be visible at the call site.
 pub async fn discover_browser_web_socket_url(target : CdpTarget) -> String {
   discover_web_socket_url(target)
 }
 
 ///|
+/// Resolve a target to a page-level CDP WebSocket URL.
+///
+/// If `target` is already a page WebSocket URL and no filters are provided, it
+/// is returned directly. Otherwise the function fetches `/json/list` and
+/// selects the first page matching the optional `target_id`, `url`, and `title`
+/// filters.
+///
+/// # Example
+/// ```mbt nocheck
+/// async test {
+///   let page_url = discover_page_web_socket_url(
+///     CdpTarget::Http("http://127.0.0.1:9222"),
+///   )
+///   assert_true(page_url.contains("/devtools/page/"))
+/// }
+/// ```
 pub async fn discover_page_web_socket_url(
   target : CdpTarget,
   target_id? : String,
@@ -211,29 +321,42 @@ pub async fn discover_page_web_socket_url(
   )
   match selected.web_socket_debugger_url {
     Some(web_socket_url) => web_socket_url
-    None =>
-      raise DiscoveryError::MissingTargetWebSocketDebuggerUrl(
-        selected.target_id,
-      )
+    None => raise MissingTargetWebSocketDebuggerUrl(selected.target_id)
   }
 }
 
 ///|
+/// Fetch and parse Chrome's `/json/version` discovery response.
+///
+/// The target may be HTTP or WebSocket. WebSocket targets are converted back to
+/// their HTTP discovery base URL before fetching `/json/version`.
 pub async fn discover_version(target : CdpTarget) -> CdpVersionInfo {
   let base_url = discovery_base_url(target)
   parse_version_info(fetch_discovery_json(base_url, "/json/version"), base_url)
 }
 
 ///|
+/// Fetch and parse Chrome's `/json/list` target list.
+///
+/// The returned array preserves Chrome's target order. Selection helpers use
+/// that order when more than one target matches the same filters.
 pub async fn discover_targets(target : CdpTarget) -> Array[CdpDiscoveredTarget] {
   let base_url = discovery_base_url(target)
   match fetch_discovery_json(base_url, "/json/list") {
     Array(items) => items.map(item => parse_discovered_target(item, base_url))
-    _ => raise DiscoveryError::InvalidTarget("/json/list")
+    _ => raise InvalidTarget("/json/list")
   }
 }
 
 ///|
+/// Select the first discovered page target matching the optional filters.
+///
+/// All provided filters must match exactly. When no page target matches, the
+/// function raises `DiscoveryError::NoMatchingTarget`.
+///
+/// This helper is intentionally exact-match only. If callers need substring or
+/// predicate matching, fetch `discover_targets` and filter the returned array
+/// directly before connecting.
 pub fn select_discovered_page_target(
   targets : Array[CdpDiscoveredTarget],
   target_id? : String,
@@ -250,6 +373,11 @@ pub fn select_discovered_page_target(
 }
 
 ///|
+/// Select the first discovered target matching the optional filters.
+///
+/// Use this lower-level selector when matching non-page targets such as workers
+/// or service workers. For regular page automation, prefer
+/// `select_discovered_page_target`.
 pub fn select_discovered_target(
   targets : Array[CdpDiscoveredTarget],
   target_id? : String,
@@ -262,38 +390,46 @@ pub fn select_discovered_target(
       return target
     }
   }
-  raise DiscoveryError::NoMatchingTarget(
+  raise NoMatchingTarget(
     target_selection_description(target_id?, target_type?, url?, title?),
   )
 }
 
 ///|
+/// Fetch Chrome's live `/json/protocol` schema as JSON.
+///
+/// The returned schema can be compared with the bundled protocol manifest by
+/// `protocol_schema_diff`.
+/// It can also be passed to `send_remote_schema_command` to reject commands not
+/// advertised by the current browser before sending them.
 pub async fn discover_protocol(target : CdpTarget) -> Json {
   fetch_discovery_json(discovery_base_url(target), "/json/protocol")
 }
 
 ///|
+/// Extract `webSocketDebuggerUrl` from a `/json/version` response.
+///
+/// The function validates only the fields needed for endpoint discovery and
+/// raises `DiscoveryError` when the response is not an object, the field is not
+/// a string, or the field is missing.
 pub fn web_socket_url_from_version_json(
   json : Json,
 ) -> String raise DiscoveryError {
-  guard json is Object(fields) else {
-    raise DiscoveryError::InvalidVersionResponse
-  }
+  guard json is Object(fields) else { raise InvalidVersionResponse }
   match fields.get("webSocketDebuggerUrl") {
     Some(String(url)) => url
-    Some(_) => raise DiscoveryError::InvalidVersionResponse
-    None => raise DiscoveryError::MissingWebSocketDebuggerUrl
+    Some(_) => raise InvalidVersionResponse
+    None => raise MissingWebSocketDebuggerUrl
   }
 }
 
 ///|
+// Parse `/json/version` into public version metadata.
 fn parse_version_info(
   json : Json,
   base_url : String,
 ) -> CdpVersionInfo raise DiscoveryError {
-  guard json is Object(fields) else {
-    raise DiscoveryError::InvalidVersionResponse
-  }
+  guard json is Object(fields) else { raise InvalidVersionResponse }
   let web_socket_debugger_url = normalize_discovered_web_socket_url(
     base_url,
     web_socket_url_from_version_json(json),
@@ -310,13 +446,12 @@ fn parse_version_info(
 }
 
 ///|
+// Parse one `/json/list` item into target metadata.
 fn parse_discovered_target(
   json : Json,
   base_url : String,
 ) -> CdpDiscoveredTarget raise DiscoveryError {
-  guard json is Object(fields) else {
-    raise DiscoveryError::InvalidTarget("/json/list item")
-  }
+  guard json is Object(fields) else { raise InvalidTarget("/json/list item") }
   let web_socket_debugger_url = match
     discovery_optional_string(fields, "webSocketDebuggerUrl") {
     Some(url) => Some(normalize_discovered_web_socket_url(base_url, url))
@@ -337,16 +472,18 @@ fn parse_discovered_target(
 }
 
 ///|
+// Fetch a JSON discovery endpoint and reject non-2xx HTTP statuses.
 async fn fetch_discovery_json(base_url : String, path : String) -> Json {
   let url = "\{strip_trailing_slash(base_url)}\{path}"
   let (response, body) = @http.get(url)
   if response.code < 200 || response.code >= 300 {
-    raise DiscoveryError::HttpStatus(response.code, response.reason)
+    raise HttpStatus(response.code, response.reason)
   }
   body.json()
 }
 
 ///|
+// Convert any accepted target into an HTTP discovery base URL.
 fn discovery_base_url(target : CdpTarget) -> String raise DiscoveryError {
   match target {
     Http(base_url) => strip_trailing_slash(base_url)
@@ -360,6 +497,7 @@ fn discovery_base_url(target : CdpTarget) -> String raise DiscoveryError {
 }
 
 ///|
+// Keep localhost-discovered WebSocket URLs aligned with the requested base host.
 fn normalize_discovered_web_socket_url(
   base_url : String,
   web_socket_url : String,
@@ -376,6 +514,21 @@ fn normalize_discovered_web_socket_url(
 }
 
 ///|
+/// Build a DevTools frontend URL for a page target.
+///
+/// `browser_web_socket_url` must be the browser-level endpoint returned by
+/// `/json/version`, while `target_id` is the page target id from `/json/list`.
+/// The returned HTTP(S) URL opens Chrome's built-in DevTools frontend for that
+/// target when the debugging browser exposes the standard frontend route.
+///
+/// # Example
+/// ```mbt nocheck
+/// let url = devtools_frontend_url(
+///   "ws://127.0.0.1:9222/devtools/browser/abc",
+///   "page-1",
+/// )
+/// assert_true(url.contains("/devtools/inspector.html"))
+/// ```
 pub fn devtools_frontend_url(
   browser_web_socket_url : String,
   target_id : String,
@@ -387,28 +540,31 @@ pub fn devtools_frontend_url(
 }
 
 ///|
+// Split a WebSocket URL into scheme and authority/path text.
 fn web_socket_url_rest(url : String) -> (String, String) raise DiscoveryError {
   match url.strip_prefix("ws://") {
     Some(rest) => ("ws", rest.to_owned())
     None =>
       match url.strip_prefix("wss://") {
         Some(rest) => ("wss", rest.to_owned())
-        None => raise DiscoveryError::InvalidTarget(url)
+        None => raise InvalidTarget(url)
       }
   }
 }
 
 ///|
+// Extract the non-empty authority from a WebSocket URL rest segment.
 fn web_socket_authority(rest : String) -> String raise DiscoveryError {
   let (authority, _) = split_authority_and_path(rest)
   if authority == "" {
-    raise DiscoveryError::InvalidTarget(rest)
+    raise InvalidTarget(rest)
   } else {
     authority
   }
 }
 
 ///|
+// Split an authority/path segment at the first slash.
 fn split_authority_and_path(rest : String) -> (String, String) {
   match rest.find("/") {
     Some(index) => (rest[:index].to_owned(), rest[index:].to_owned())
@@ -417,24 +573,26 @@ fn split_authority_and_path(rest : String) -> (String, String) {
 }
 
 ///|
+// Extract the authority from an HTTP or HTTPS URL.
 fn http_url_authority(url : String) -> String raise DiscoveryError {
   let rest = match url.strip_prefix("http://") {
     Some(rest) => rest
     None =>
       match url.strip_prefix("https://") {
         Some(rest) => rest
-        None => raise DiscoveryError::InvalidTarget(url)
+        None => raise InvalidTarget(url)
       }
   }
   let (authority, _) = split_authority_and_path(rest.to_owned())
   if authority == "" {
-    raise DiscoveryError::InvalidTarget(url)
+    raise InvalidTarget(url)
   } else {
     authority
   }
 }
 
 ///|
+// Extract and lowercase the host portion of an authority.
 fn authority_host(authority : String) -> String {
   let host = if authority.has_prefix("[") {
     match authority.find("]") {
@@ -451,6 +609,7 @@ fn authority_host(authority : String) -> String {
 }
 
 ///|
+// Rebuild a WebSocket URL with a replacement authority.
 fn replace_web_socket_authority(
   url : String,
   authority : String,
@@ -461,11 +620,13 @@ fn replace_web_socket_authority(
 }
 
 ///|
+// Check whether a WebSocket URL points at a page target.
 fn is_page_web_socket_url(url : String) -> Bool {
   url.contains("/devtools/page/")
 }
 
 ///|
+// Check all provided target filters against a discovered target.
 fn discovered_target_matches(
   target : CdpDiscoveredTarget,
   target_id? : String,
@@ -480,6 +641,7 @@ fn discovered_target_matches(
 }
 
 ///|
+// Match a target field when the expected value is optional.
 fn optional_target_field_matches(value : String, expected : String?) -> Bool {
   match expected {
     Some(expected) => value == expected
@@ -488,6 +650,7 @@ fn optional_target_field_matches(value : String, expected : String?) -> Bool {
 }
 
 ///|
+// Render target filters for a no-match diagnostic.
 fn target_selection_description(
   target_id? : String,
   target_type? : String,
@@ -515,17 +678,19 @@ fn target_selection_description(
 }
 
 ///|
+// Read a required string field from discovery JSON.
 fn discovery_required_string(
   fields : Map[String, Json],
   name : String,
 ) -> String raise DiscoveryError {
   match fields.get(name) {
     Some(String(value)) => value
-    _ => raise DiscoveryError::InvalidVersionResponse
+    _ => raise InvalidVersionResponse
   }
 }
 
 ///|
+// Read an optional string field from discovery JSON.
 fn discovery_optional_string(
   fields : Map[String, Json],
   name : String,
@@ -533,11 +698,12 @@ fn discovery_optional_string(
   match fields.get(name) {
     Some(String(value)) => Some(value)
     Some(Null) | None => None
-    Some(_) => raise DiscoveryError::InvalidVersionResponse
+    Some(_) => raise InvalidVersionResponse
   }
 }
 
 ///|
+// Remove one trailing slash from a URL or path.
 fn strip_trailing_slash(value : String) -> String {
   match value.strip_suffix("/") {
     Some(stripped) => stripped.to_owned()
@@ -546,6 +712,7 @@ fn strip_trailing_slash(value : String) -> String {
 }
 
 ///|
+// Return true when the string is a valid TCP port number.
 fn target_is_port(value : String) -> Bool {
   if value == "" {
     return false
@@ -561,6 +728,7 @@ fn target_is_port(value : String) -> Bool {
 }
 
 ///|
+// Return true when the string looks like `host:port`.
 fn target_is_host_port(value : String) -> Bool {
   match value.rev_find(":") {
     Some(index) if index > 0 && index + 1 < value.length() =>

@@ -5,7 +5,7 @@ import {
   "moonbitlang/async/http",
   "moonbitlang/async/process",
   "moonbitlang/async/websocket",
-  "justjavac/moonbit_cdp/protocol",
+  "justjavac/cdp/protocol",
 }
 
 import {
@@ -15,7 +15,8 @@ import {
   "moonbitlang/async/socket",
   "moonbitlang/async/websocket",
   "moonbitlang/core/env",
-  "justjavac/moonbit_cdp/protocol",
+  "justjavac/cdp/protocol",
+  "justjavac/cdp/protocol/typed",
 } for "test"
 
 import {

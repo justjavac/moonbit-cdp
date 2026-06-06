@@ -18,7 +18,7 @@ async test "cdp client sends command and waits for matching response" {
       )
       ws.send_text("{\"id\":1,\"result\":{\"ok\":true}}")
     }
-    let client = @connection.CdpClient::connect("ws://localhost:\{addr.port()}")
+    let client = @client.CdpClient::connect("ws://localhost:\{addr.port()}")
     defer client.close()
     let response = client.send_command("Runtime.evaluate", params={
       "expression": "1+1",
@@ -66,9 +66,9 @@ async test "cdp client sends generated command messages and decodes typed result
       assert_true(second.contains("\"method\":\"Runtime.enable\""))
       ws.send_text("{\"id\":8,\"result\":{}}")
     }
-    let client = @connection.CdpClient::connect("ws://localhost:\{addr.port()}")
+    let client = @client.CdpClient::connect("ws://localhost:\{addr.port()}")
     defer client.close()
-    let params : @protocol.RuntimeEvaluateParams = {
+    let params : @typed.RuntimeEvaluateParams = {
       expression: "1 + 1",
       object_group: None,
       include_command_line_api: None,
@@ -86,14 +86,14 @@ async test "cdp client sends generated command messages and decodes typed result
       unique_context_id: None,
       serialization_options: None,
     }
-    let command = @protocol.runtime_evaluate_command(
+    let command = @typed.runtime_evaluate_command(
       id=7,
       params,
       session_id="session-1",
     )
     let response = client.send_cdp_message(command)
-    let result = @protocol.RuntimeEvaluateResult::from_json(
-      @connection.cdp_response_result_json(response),
+    let result = @typed.RuntimeEvaluateResult::from_json(
+      @client.cdp_response_result_json(response),
     )
     inspect(result.result.type_, content="number")
     let next = client.send_command("Runtime.enable")
@@ -124,15 +124,15 @@ async test "cdp client sends schema commands and validates schema responses" {
       assert_true(second.contains("\"method\":\"Page.navigate\""))
       ws.send_text("{\"id\":2,\"result\":{},\"sessionId\":\"session-1\"}")
     }
-    let client = @connection.CdpClient::connect("ws://localhost:\{addr.port()}")
+    let client = @client.CdpClient::connect("ws://localhost:\{addr.port()}")
     defer client.close()
     let response = client.send_schema_command(
       "Page.navigate",
       params={ "url": "https://example.com/" },
       session_id="session-1",
     )
-    let result = @protocol.PageNavigateResult::from_json(
-      @connection.cdp_response_result_json(response),
+    let result = @typed.PageNavigateResult::from_json(
+      @client.cdp_response_result_json(response),
     )
     inspect(result.frame_id.value, content="frame-1")
     let invalid : Result[@protocol.CdpResponseMessage, Error] = try? client.send_schema_command(
@@ -168,7 +168,7 @@ async test "cdp client exposes raw event buffer subscriptions and drain" {
         "{\"method\":\"Page.loadEventFired\",\"sessionId\":\"session-2\",\"params\":{\"timestamp\":1}}",
       )
     }
-    let client = @connection.CdpClient::connect("ws://localhost:\{addr.port()}")
+    let client = @client.CdpClient::connect("ws://localhost:\{addr.port()}")
     defer client.close()
     let seen : Array[String] = []
     let handler_id = client.on_cdp_event(
@@ -213,7 +213,7 @@ async test "cdp client tracks target attached and detached events" {
       )
       ws.send_text("{\"id\":2,\"result\":{}}")
     }
-    let client = @connection.CdpClient::connect("ws://localhost:\{addr.port()}")
+    let client = @client.CdpClient::connect("ws://localhost:\{addr.port()}")
     defer client.close()
     let session_id = client.attach_to_target("target-1")
     inspect(session_id, content="session-1")
@@ -224,4 +224,199 @@ async test "cdp client tracks target attached and detached events" {
     ignore(client.send_command("Runtime.enable", session_id="session-1"))
     assert_true(client.attached_target("session-1") is None)
   }
+}
+
+///|
+async test "connection helpers open direct websocket targets" {
+  @async.with_task_group() <| group => {
+    let server = @http.Server(@socket.Addr::parse("127.0.0.1:0"))
+    let addr = server.addr
+    group.spawn_bg() <| () => {
+      defer server.close()
+      for _ in 0..<6 {
+        let (conn, _) = server.accept()
+        defer conn.close()
+        let request = conn.read_request()
+        let ws = @websocket.from_http_server(request, conn)
+        ws.close()
+      }
+    }
+    let browser_url = "ws://127.0.0.1:\{addr.port()}/devtools/browser/id"
+    let page_url = "ws://127.0.0.1:\{addr.port()}/devtools/page/page-1"
+
+    let direct = @client.connect_cdp_target(WebSocket(browser_url))
+    direct.close()
+    let direct_timeout = @client.connect_cdp_target_with_timeout(
+      WebSocket(browser_url),
+      timeout_ms=1000,
+    )
+    direct_timeout.close()
+    let browser = @client.connect_cdp_browser_target(WebSocket(browser_url))
+    browser.close()
+    let browser_timeout = @client.connect_cdp_browser_target_with_timeout(
+      WebSocket(browser_url),
+      timeout_ms=1000,
+    )
+    browser_timeout.close()
+    let page = @client.connect_cdp_page_target(WebSocket(page_url))
+    page.close()
+    let page_timeout = @client.connect_cdp_page_target_with_timeout(
+      WebSocket(page_url),
+      timeout_ms=1000,
+    )
+    page_timeout.close()
+  }
+}
+
+///|
+async test "connect_with_timeout reports invalid websocket endpoints" {
+  let result : Result[@client.CdpClient, Error] = try? @client.CdpClient::connect_with_timeout(
+    "ws://127.0.0.1:1/devtools/browser/id",
+    timeout_ms=50,
+  )
+  match result {
+    Err(@client.CdpConnectionError::WebSocketHandshakeFailed(_, _))
+    | Err(@client.CdpConnectionError::ConnectionTimeout(_, _)) => ()
+    Ok(client) => {
+      client.close()
+      fail("expected websocket connection failure")
+    }
+    Err(_) => fail("expected structured connection error")
+  }
+}
+
+///|
+async test "cdp client sends remote-schema validated commands" {
+  @async.with_task_group() <| group => {
+    let server = @http.Server(@socket.Addr::parse("127.0.0.1:0"))
+    let addr = server.addr
+    group.spawn_bg() <| () => {
+      defer server.close()
+      let (conn, _) = server.accept()
+      defer conn.close()
+      let request = conn.read_request()
+      let ws = @websocket.from_http_server(request, conn)
+      defer ws.close()
+      let text = ws.recv().read_all().text()
+      assert_true(text.contains("\"method\":\"Runtime.evaluate\""))
+      assert_true(text.contains("\"expression\":\"1 + 1\""))
+      ws.send_text(
+        "{\"id\":1,\"result\":{\"result\":{\"type\":\"number\",\"value\":2},\"exceptionDetails\":null}}",
+      )
+    }
+    let client = @client.CdpClient::connect("ws://127.0.0.1:\{addr.port()}")
+    defer client.close()
+    let remote_schema : Json = {
+      "domains": [{ "domain": "Runtime", "commands": [{ "name": "evaluate" }] }],
+    }
+    let response = client.send_remote_schema_command(
+      remote_schema,
+      "Runtime.evaluate",
+      params={ "expression": "1 + 1" },
+    )
+    inspect(response.id, content="1")
+    guard response.result is Some({ "result": { "type": "number", .. }, .. }) else {
+      fail("expected Runtime.evaluate result")
+    }
+  }
+}
+
+///|
+async test "cdp client records command failures" {
+  @async.with_task_group() <| group => {
+    let server = @http.Server(@socket.Addr::parse("127.0.0.1:0"))
+    let addr = server.addr
+    group.spawn_bg() <| () => {
+      defer server.close()
+      let (conn, _) = server.accept()
+      defer conn.close()
+      let request = conn.read_request()
+      let ws = @websocket.from_http_server(request, conn)
+      defer ws.close()
+      ignore(ws.recv().read_all())
+      ws.send_text(
+        "{\"id\":1,\"error\":{\"code\":-32000,\"message\":\"failed\",\"data\":{\"reason\":\"test\"}}}",
+      )
+    }
+    let client = @client.CdpClient::connect("ws://127.0.0.1:\{addr.port()}")
+    defer client.close()
+    let response = client.send_command("Runtime.evaluate", params={
+      "expression": "throw new Error()",
+    })
+    guard response.error is Some(error) else {
+      fail("expected CDP error response")
+    }
+    inspect(error.code, content="-32000")
+    guard client.last_command_failure() is Some(failure) else {
+      fail("expected last command failure")
+    }
+    inspect(failure.method_name, content="Runtime.evaluate")
+    inspect(failure.message, content="failed")
+  }
+}
+
+///|
+async test "recv_cdp_response times out and clears inflight state" {
+  @async.with_task_group() <| group => {
+    let server = @http.Server(@socket.Addr::parse("127.0.0.1:0"))
+    let addr = server.addr
+    group.spawn_bg() <| () => {
+      defer server.close()
+      let (conn, _) = server.accept()
+      defer conn.close()
+      let request = conn.read_request()
+      let ws = @websocket.from_http_server(request, conn)
+      defer ws.close()
+      ignore(ws.recv().read_all())
+      @async.sleep(100)
+    }
+    let client = @client.CdpClient::connect("ws://127.0.0.1:\{addr.port()}")
+    defer client.close()
+    let id = client.send_cdp_command("Runtime.evaluate", params={
+      "expression": "1",
+    })
+    let result : Result[@protocol.CdpResponseMessage, Error] = try? client.recv_cdp_response(
+      id,
+      timeout_ms=1,
+    )
+    guard result is Err(@client.BrowserError::WaitTimeout("cdp response 1")) else {
+      fail("expected response timeout")
+    }
+  }
+}
+
+///|
+test "connection errors expose stable diagnostics" {
+  let timeout = @client.CdpConnectionError::ConnectionTimeout(
+    "ws://127.0.0.1:9222/devtools/browser/id", 250,
+  )
+  inspect(timeout.kind(), content="connection_timeout")
+  inspect(
+    timeout.web_socket_url(),
+    content="ws://127.0.0.1:9222/devtools/browser/id",
+  )
+  guard timeout.timeout_ms() is Some(250) else { fail("expected timeout ms") }
+  assert_true(timeout.reason() is None)
+  inspect(timeout.path(), content="connection.websocket.timeout")
+  inspect(
+    timeout.message(),
+    content="timed out after 250ms connecting to ws://127.0.0.1:9222/devtools/browser/id",
+  )
+  let diagnostic = timeout.diagnostic()
+  inspect(diagnostic.kind, content="connection_timeout")
+  inspect(diagnostic.path, content="connection.websocket.timeout")
+
+  let handshake = @client.CdpConnectionError::WebSocketHandshakeFailed(
+    "ws://127.0.0.1:9222/devtools/browser/id", "HTTP 404",
+  )
+  inspect(handshake.kind(), content="websocket_handshake_failed")
+  assert_true(handshake.timeout_ms() is None)
+  guard handshake.reason() is Some("HTTP 404") else {
+    fail("expected handshake reason")
+  }
+  inspect(handshake.path(), content="connection.websocket.handshake")
+  inspect(
+    handshake.message(),
+    content="websocket handshake failed for ws://127.0.0.1:9222/devtools/browser/id: HTTP 404",
+  )
 }

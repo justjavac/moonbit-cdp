@@ -1,11 +1,11 @@
 name = "justjavac/cdp"
 
-version = "0.1.3"
+version = "0.1.4"
 
 readme = "README.mbt.md"
 
 import {
-  "moonbitlang/async@0.19.1",
+  "moonbitlang/async@0.19.2",
   "moonbitlang/x@0.4.45",
 }
 

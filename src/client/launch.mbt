@@ -1,4 +1,15 @@
 ///|
+async fn[T, E : Error] try_result_client_launch(
+  f : async () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
 /// Errors raised while locating or waiting for a local Chrome-family browser.
 ///
 /// `BrowserNotFound` means no executable was found in the candidate list and no
@@ -239,7 +250,7 @@ pub fn chrome_launch_args(options : CdpLaunchOptions) -> Array[String] {
 async fn remove_devtools_active_port_file(user_data_dir : String) -> Unit {
   let path = devtools_active_port_path(user_data_dir)
   if @fs.exists(path) && @fs.kind(path, follow_symlink=false) is Regular {
-    ignore(try? @fs.remove(path))
+    ignore(try_result_client_launch(() => @fs.remove(path)))
   }
 }
 

@@ -1,60 +1,76 @@
 ///|
+fn[T, E : Error] try_result_protocol_remote_schema_wbtest(
+  f : () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
 test "remote schema private helpers reject malformed primitive fields" {
-  let bad_object : Result[Map[String, Json], Error] = try? json_object_fields(
-    [],
-    "protocol",
+  let bad_object : Result[Map[String, Json], Error] = try_result_protocol_remote_schema_wbtest(() => {
+      json_object_fields([], "protocol")
+    },
   )
   guard bad_object is Err(ProtocolSchemaDiffError::ExpectedObject("protocol")) else {
     fail("expected object error")
   }
 
-  let missing : Result[Json, Error] = try? required_json({}, "version")
+  let missing : Result[Json, Error] = try_result_protocol_remote_schema_wbtest(() => {
+    required_json({}, "version")
+  })
   guard missing is Err(ProtocolSchemaDiffError::MissingField("version")) else {
     fail("expected missing field")
   }
 
-  let bad_array : Result[Array[Json], Error] = try? json_array({}, "domains")
+  let bad_array : Result[Array[Json], Error] = try_result_protocol_remote_schema_wbtest(() => {
+      json_array({}, "domains")
+    },
+  )
   guard bad_array is Err(ProtocolSchemaDiffError::InvalidField("domains")) else {
     fail("expected invalid array")
   }
 
-  let bad_optional_array : Result[Array[Json], Error] = try? optional_json_array(
-    { "items": {} },
-    "items",
+  let bad_optional_array : Result[Array[Json], Error] = try_result_protocol_remote_schema_wbtest(() => {
+      optional_json_array({ "items": {} }, "items")
+    },
   )
   guard bad_optional_array
     is Err(ProtocolSchemaDiffError::InvalidField("items")) else {
     fail("expected invalid optional array")
   }
 
-  let missing_string : Result[String, Error] = try? schema_required_string(
-    {},
-    "domain",
+  let missing_string : Result[String, Error] = try_result_protocol_remote_schema_wbtest(() => {
+      schema_required_string({}, "domain")
+    },
   )
   guard missing_string is Err(ProtocolSchemaDiffError::MissingField("domain")) else {
     fail("expected missing string")
   }
 
-  let bad_string : Result[String, Error] = try? schema_required_string(
-    { "domain": false },
-    "domain",
+  let bad_string : Result[String, Error] = try_result_protocol_remote_schema_wbtest(() => {
+      schema_required_string({ "domain": false }, "domain")
+    },
   )
   guard bad_string is Err(ProtocolSchemaDiffError::InvalidField("domain")) else {
     fail("expected invalid string")
   }
 
-  let bad_optional_string : Result[String?, Error] = try? schema_optional_string(
-    { "$ref": false },
-    "$ref",
+  let bad_optional_string : Result[String?, Error] = try_result_protocol_remote_schema_wbtest(() => {
+      schema_optional_string({ "$ref": false }, "$ref")
+    },
   )
   guard bad_optional_string
     is Err(ProtocolSchemaDiffError::InvalidField("$ref")) else {
     fail("expected invalid optional string")
   }
 
-  let bad_bool : Result[Bool, Error] = try? optional_bool(
-    { "experimental": "yes" },
-    "experimental",
+  let bad_bool : Result[Bool, Error] = try_result_protocol_remote_schema_wbtest(() => {
+      optional_bool({ "experimental": "yes" }, "experimental")
+    },
   )
   guard bad_bool is Err(ProtocolSchemaDiffError::InvalidField("experimental")) else {
     fail("expected invalid optional bool")
@@ -65,14 +81,18 @@ test "remote schema private helpers reject malformed primitive fields" {
 test "remote schema private helpers cover kind and enum edge cases" {
   inspect(value_kind({}), content="any")
 
-  let bad_items : Result[String, Error] = try? array_item_kind({
-    "items": false,
-  })
+  let bad_items : Result[String, Error] = try_result_protocol_remote_schema_wbtest(() => {
+      array_item_kind({ "items": false })
+    },
+  )
   guard bad_items is Err(ProtocolSchemaDiffError::InvalidField("items")) else {
     fail("expected invalid array items")
   }
 
-  let bad_enum : Result[Array[String], Error] = try? string_values([false])
+  let bad_enum : Result[Array[String], Error] = try_result_protocol_remote_schema_wbtest(() => {
+      string_values([false])
+    },
+  )
   guard bad_enum is Err(ProtocolSchemaDiffError::InvalidField("enum")) else {
     fail("expected invalid enum item")
   }

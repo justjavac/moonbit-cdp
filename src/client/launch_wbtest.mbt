@@ -1,4 +1,15 @@
 ///|
+async fn[T, E : Error] try_result_client_launch_wbtest(
+  f : async () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
 test "parse DevToolsActivePort file" {
   guard parse_devtools_active_port(
       (
@@ -119,9 +130,9 @@ async test "wait for DevToolsActivePort file" {
 ///|
 async test "wait for missing DevToolsActivePort file sleeps then times out" {
   let dir = @fs.tmpdir(prefix="mbt-cdp-devtools-missing-")
-  let result : Result[DevToolsActivePort, Error] = try? wait_for_devtools_active_port(
-    dir,
-    timeout_ms=150,
+  let result : Result[DevToolsActivePort, Error] = try_result_client_launch_wbtest(() => {
+      wait_for_devtools_active_port(dir, timeout_ms=150)
+    },
   )
   guard result is Err(BrowserLaunchError::BrowserNotReady(150)) else {
     fail("expected missing DevToolsActivePort timeout")
@@ -139,9 +150,9 @@ async test "wait for DevToolsActivePort times out on invalid file" {
     "bad\n/devtools/browser/id\n",
     create_mode=CreateOrTruncate,
   )
-  let result : Result[DevToolsActivePort, Error] = try? wait_for_devtools_active_port(
-    dir,
-    timeout_ms=150,
+  let result : Result[DevToolsActivePort, Error] = try_result_client_launch_wbtest(() => {
+      wait_for_devtools_active_port(dir, timeout_ms=150)
+    },
   )
   guard result is Err(BrowserLaunchError::BrowserNotReady(150)) else {
     fail("expected DevToolsActivePort timeout")
@@ -157,13 +168,15 @@ async test "public launch browser reaches process spawn errors for fake executab
   @fs.rmdir(dir, recursive=true) catch {
     _ => ()
   }
-  let result : Result[CdpLaunchInfo, Error] = try? launch_browser({
-    ..default_launch_options(),
-    browser_path: Some("__mbt_cdp_missing_browser__"),
-    port: 9222,
-    user_data_dir: dir,
-    timeout_ms: 1,
-    url: None,
+  let result : Result[CdpLaunchInfo, Error] = try_result_client_launch_wbtest(() => {
+    launch_browser({
+      ..default_launch_options(),
+      browser_path: Some("__mbt_cdp_missing_browser__"),
+      port: 9222,
+      user_data_dir: dir,
+      timeout_ms: 1,
+      url: None,
+    })
   })
   guard result is Err(_) else { fail("expected fake browser spawn to fail") }
   @fs.rmdir(dir, recursive=true) catch {
@@ -274,10 +287,9 @@ async test "launch browser helper waits for fixed debugging endpoint" {
 
 ///|
 async test "wait for browser endpoint times out when discovery is unavailable" {
-  let result : Result[String, Error] = try? wait_for_browser_endpoint(
-    "http://127.0.0.1:1",
-    timeout_ms=1,
-  )
+  let result : Result[String, Error] = try_result_client_launch_wbtest(() => {
+    wait_for_browser_endpoint("http://127.0.0.1:1", timeout_ms=1)
+  })
   guard result is Err(BrowserLaunchError::BrowserNotReady(1)) else {
     fail("expected browser endpoint timeout")
   }
@@ -301,10 +313,12 @@ async test "wait for browser endpoint sleeps before timeout" {
         conn.end_response()
       }
     }
-    let result : Result[String, Error] = try? wait_for_browser_endpoint(
-      "http://127.0.0.1:\{addr.port()}",
-      timeout_ms=150,
-    )
+    let result : Result[String, Error] = try_result_client_launch_wbtest(() => {
+      wait_for_browser_endpoint(
+        "http://127.0.0.1:\{addr.port()}",
+        timeout_ms=150,
+      )
+    })
     guard result is Err(BrowserLaunchError::BrowserNotReady(150)) else {
       fail("expected delayed browser endpoint timeout")
     }
@@ -320,15 +334,19 @@ async test "resolve launch browser path and first existing candidate" {
     }),
     content="custom-browser",
   )
-  ignore(try? resolve_launch_browser_path(default_launch_options()))
+  ignore(
+    try_result_client_launch_wbtest(() => {
+      resolve_launch_browser_path(default_launch_options())
+    }),
+  )
   ignore(chrome_executable_candidates())
   let dir = @fs.tmpdir(prefix="mbt-cdp-resolve-browser-")
   let browser = "\{dir}/browser"
   @fs.write_file(browser, "", create_mode=CreateOrTruncate)
   assert_eq(resolve_first_existing(["missing-browser", browser]), browser)
-  let missing : Result[String, Error] = try? resolve_first_existing([
-    "missing-browser-a", "missing-browser-b",
-  ])
+  let missing : Result[String, Error] = try_result_client_launch_wbtest(() => {
+    resolve_first_existing(["missing-browser-a", "missing-browser-b"])
+  })
   guard missing is Err(BrowserLaunchError::BrowserNotFound) else {
     fail("expected BrowserNotFound")
   }

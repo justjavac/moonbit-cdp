@@ -1,4 +1,15 @@
 ///|
+async fn[T, E : Error] try_result_client_client_test(
+  f : async () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
 async test "cdp client sends command and waits for matching response" {
   @async.with_task_group() <| group => {
     let server = @http.Server(@socket.Addr::parse("127.0.0.1:0"))
@@ -135,10 +146,13 @@ async test "cdp client sends schema commands and validates schema responses" {
       @client.cdp_response_result_json(response),
     )
     inspect(result.frame_id.value, content="frame-1")
-    let invalid : Result[@protocol.CdpResponseMessage, Error] = try? client.send_schema_command(
-      "Page.navigate",
-      params={ "url": "https://example.com/" },
-      session_id="session-1",
+    let invalid : Result[@protocol.CdpResponseMessage, Error] = try_result_client_client_test(() => {
+        client.send_schema_command(
+          "Page.navigate",
+          params={ "url": "https://example.com/" },
+          session_id="session-1",
+        )
+      },
     )
     guard invalid
       is Err(
@@ -270,9 +284,12 @@ async test "connection helpers open direct websocket targets" {
 
 ///|
 async test "connect_with_timeout reports invalid websocket endpoints" {
-  let result : Result[@client.CdpClient, Error] = try? @client.CdpClient::connect_with_timeout(
-    "ws://127.0.0.1:1/devtools/browser/id",
-    timeout_ms=50,
+  let result : Result[@client.CdpClient, Error] = try_result_client_client_test(() => {
+      @client.CdpClient::connect_with_timeout(
+        "ws://127.0.0.1:1/devtools/browser/id",
+        timeout_ms=50,
+      )
+    },
   )
   match result {
     Err(@client.CdpConnectionError::WebSocketHandshakeFailed(_, _))
@@ -375,9 +392,9 @@ async test "recv_cdp_response times out and clears inflight state" {
     let id = client.send_cdp_command("Runtime.evaluate", params={
       "expression": "1",
     })
-    let result : Result[@protocol.CdpResponseMessage, Error] = try? client.recv_cdp_response(
-      id,
-      timeout_ms=1,
+    let result : Result[@protocol.CdpResponseMessage, Error] = try_result_client_client_test(() => {
+        client.recv_cdp_response(id, timeout_ms=1)
+      },
     )
     guard result is Err(@client.BrowserError::WaitTimeout("cdp response 1")) else {
       fail("expected response timeout")

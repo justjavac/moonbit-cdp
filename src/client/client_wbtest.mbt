@@ -1,4 +1,26 @@
 ///|
+fn[T, E : Error] try_result_client_client_wbtest(
+  f : () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
+async fn[T, E : Error] try_result_client_client_wbtest_async(
+  f : async () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
 async test "close clears in-flight command state" {
   @async.with_task_group() <| group => {
     let server = @http.Server(@socket.Addr::parse("127.0.0.1:0"))
@@ -61,11 +83,15 @@ async test "client state helpers cover buffered responses and events" {
       method_name: "Runtime.evaluate",
       session_id: None,
     }
-    let duplicate : Result[Unit, Error] = try? client.reserve_cdp_command_id(5)
+    let duplicate : Result[Unit, Error] = try_result_client_client_wbtest(() => {
+      client.reserve_cdp_command_id(5)
+    })
     guard duplicate is Err(BrowserError::InvalidField("id")) else {
       fail("expected duplicate id rejection")
     }
-    let invalid : Result[Unit, Error] = try? client.reserve_cdp_command_id(0)
+    let invalid : Result[Unit, Error] = try_result_client_client_wbtest(() => {
+      client.reserve_cdp_command_id(0)
+    })
     guard invalid is Err(BrowserError::InvalidField("id")) else {
       fail("expected invalid id rejection")
     }
@@ -234,9 +260,12 @@ async test "connect with timeout reports websocket handshake failures" {
       conn.write("not a websocket")
       conn.end_response()
     }
-    let result : Result[CdpClient, Error] = try? CdpClient::connect_with_timeout(
-      "ws://127.0.0.1:\{addr.port()}",
-      timeout_ms=1000,
+    let result : Result[CdpClient, Error] = try_result_client_client_wbtest_async(() => {
+        CdpClient::connect_with_timeout(
+          "ws://127.0.0.1:\{addr.port()}",
+          timeout_ms=1000,
+        )
+      },
     )
     guard result is Err(CdpConnectionError::WebSocketHandshakeFailed(_, _)) else {
       fail("expected websocket handshake failure")

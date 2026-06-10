@@ -1,4 +1,15 @@
 ///|
+fn[T, E : Error] try_result_client_browser_wbtest(
+  f : () -> T raise E,
+) -> Result[T, E] {
+  try f() catch {
+    e => Err(e)
+  } noraise {
+    value => Ok(value)
+  }
+}
+
+///|
 test "browser response helpers parse target metadata and errors" {
   let target = parse_target_info({
     "targetId": "target-1",
@@ -23,18 +34,24 @@ test "browser response helpers parse target metadata and errors" {
   inspect(default_attached.attached, content="false")
   assert_true(default_attached.browser_context_id is None)
 
-  let invalid_target : Result[CdpTargetInfo, Error] = try? parse_target_info([])
+  let invalid_target : Result[CdpTargetInfo, Error] = try_result_client_browser_wbtest(() => {
+      parse_target_info([])
+    },
+  )
   guard invalid_target is Err(BrowserError::InvalidField("targetInfos[]")) else {
     fail("expected invalid targetInfo object")
   }
 
-  let invalid_attached : Result[CdpTargetInfo, Error] = try? parse_target_info({
-    "targetId": "target-3",
-    "type": "page",
-    "title": "Bad",
-    "url": "https://example.com/",
-    "attached": "yes",
-  })
+  let invalid_attached : Result[CdpTargetInfo, Error] = try_result_client_browser_wbtest(() => {
+      parse_target_info({
+        "targetId": "target-3",
+        "type": "page",
+        "title": "Bad",
+        "url": "https://example.com/",
+        "attached": "yes",
+      })
+    },
+  )
   guard invalid_attached is Err(BrowserError::InvalidField("attached")) else {
     fail("expected invalid attached field")
   }
@@ -61,8 +78,9 @@ test "browser response helpers classify result shapes" {
     session_id: None,
   }
   json_inspect(cdp_response_result_json(empty_response), content={})
-  let missing_result : Result[Map[String, Json], Error] = try? response_result(
-    empty_response,
+  let missing_result : Result[Map[String, Json], Error] = try_result_client_browser_wbtest(() => {
+      response_result(empty_response)
+    },
   )
   guard missing_result is Err(BrowserError::MissingField("result")) else {
     fail("expected missing result")
@@ -74,13 +92,16 @@ test "browser response helpers classify result shapes" {
     error: None,
     session_id: None,
   }
-  let invalid_result : Result[Map[String, Json], Error] = try? response_result(
-    array_response,
+  let invalid_result : Result[Map[String, Json], Error] = try_result_client_browser_wbtest(() => {
+      response_result(array_response)
+    },
   )
   guard invalid_result is Err(BrowserError::InvalidField("result")) else {
     fail("expected invalid result")
   }
-  let missing_json : Result[Json, Error] = try? required_json(result, "missing")
+  let missing_json : Result[Json, Error] = try_result_client_browser_wbtest(() => {
+    required_json(result, "missing")
+  })
   guard missing_json is Err(BrowserError::MissingField("missing")) else {
     fail("expected missing json field")
   }
@@ -91,15 +112,16 @@ test "browser response helpers classify result shapes" {
     error: Some({ code: -32000, message: "failed", data: None }),
     session_id: None,
   }
-  let failed : Result[Map[String, Json], Error] = try? response_result(
-    error_response,
+  let failed : Result[Map[String, Json], Error] = try_result_client_browser_wbtest(() => {
+      response_result(error_response)
+    },
   )
   guard failed is Err(BrowserError::CommandFailed(-32000, "failed")) else {
     fail("expected command failure")
   }
-  let failed_json : Result[Json, Error] = try? cdp_response_result_json(
-    error_response,
-  )
+  let failed_json : Result[Json, Error] = try_result_client_browser_wbtest(() => {
+    cdp_response_result_json(error_response)
+  })
   guard failed_json is Err(BrowserError::CommandFailed(-32000, "failed")) else {
     fail("expected command failure from json helper")
   }
@@ -123,30 +145,36 @@ test "browser scalar helpers reject missing and invalid fields" {
   assert_true(optional_string(fields, "missing") is None)
   assert_true(optional_bool(fields, "missing") is None)
 
-  let missing : Result[String, Error] = try? required_string(fields, "missing")
+  let missing : Result[String, Error] = try_result_client_browser_wbtest(() => {
+    required_string(fields, "missing")
+  })
   guard missing is Err(BrowserError::MissingField("missing")) else {
     fail("expected missing field")
   }
-  let bad_string : Result[String, Error] = try? required_string(
-    fields, "bad_string",
-  )
+  let bad_string : Result[String, Error] = try_result_client_browser_wbtest(() => {
+    required_string(fields, "bad_string")
+  })
   guard bad_string is Err(BrowserError::InvalidField("bad_string")) else {
     fail("expected invalid string")
   }
-  let bad_optional_string : Result[String?, Error] = try? optional_string(
-    fields, "bad_string",
+  let bad_optional_string : Result[String?, Error] = try_result_client_browser_wbtest(() => {
+      optional_string(fields, "bad_string")
+    },
   )
   guard bad_optional_string is Err(BrowserError::InvalidField("bad_string")) else {
     fail("expected invalid optional string")
   }
-  let bad_optional_bool : Result[Bool?, Error] = try? optional_bool(
-    fields, "bad_bool",
+  let bad_optional_bool : Result[Bool?, Error] = try_result_client_browser_wbtest(() => {
+      optional_bool(fields, "bad_bool")
+    },
   )
   guard bad_optional_bool is Err(BrowserError::InvalidField("bad_bool")) else {
     fail("expected invalid optional bool")
   }
   inspect(checked_duration(1, "timeout_ms"), content="1")
-  let bad_duration : Result[Int, Error] = try? checked_duration(0, "timeout_ms")
+  let bad_duration : Result[Int, Error] = try_result_client_browser_wbtest(() => {
+    checked_duration(0, "timeout_ms")
+  })
   guard bad_duration is Err(BrowserError::InvalidField("timeout_ms")) else {
     fail("expected invalid duration")
   }
@@ -193,9 +221,10 @@ async test "browser target helpers send schema commands" {
 
 ///|
 test "browser target info list parser rejects invalid target list shape" {
-  let result : Result[Array[CdpTargetInfo], Error] = try? parse_target_infos({
-    "targetInfos": {},
-  })
+  let result : Result[Array[CdpTargetInfo], Error] = try_result_client_browser_wbtest(() => {
+      parse_target_infos({ "targetInfos": {} })
+    },
+  )
   guard result is Err(BrowserError::InvalidField("targetInfos")) else {
     fail("expected invalid targetInfos")
   }

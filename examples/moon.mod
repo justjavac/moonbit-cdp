@@ -5,8 +5,8 @@ version = "0.1.3"
 readme = "README.mbt.md"
 
 import {
-  "moonbitlang/async@0.19.1",
-  "justjavac/cdp@0.1.3",
+  "moonbitlang/async@0.19.2",
+  "justjavac/cdp@0.1.5",
 }
 
 repository = "https://github.com/justjavac/moonbit-cdp"

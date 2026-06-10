@@ -103,6 +103,22 @@ async test "ignore DevToolsActivePort removal errors" {
 }
 
 ///|
+async test "ignore injected DevToolsActivePort removal errors" {
+  let dir = @fs.tmpdir(prefix="mbt-cdp-remove-devtools-injected-error-")
+  let path = devtools_active_port_path(dir)
+  @fs.write_file(
+    path,
+    "45555\n/devtools/browser/stale\n",
+    create_mode=CreateOrTruncate,
+  )
+  remove_devtools_active_port_file_with_remove(dir, _ => fail("remove failed"))
+  assert_true(@fs.exists(path))
+  @fs.rmdir(dir, recursive=true) catch {
+    _ => ()
+  }
+}
+
+///|
 async test "wait for DevToolsActivePort file" {
   let dir = @fs.tmpdir(prefix="mbt-cdp-devtools-")
   @async.with_task_group() <| group => {
